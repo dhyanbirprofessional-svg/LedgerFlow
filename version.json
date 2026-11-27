@@ -1,7 +1,7 @@
 {
-    "version":  "1.0.8",
+    "version":  "1.0.9",
     "repo":  "dhyanbirprofessional-svg/LedgerFlow",
-    "notes":  "Fix Indian Bank \u0026 multi-page PDF statement parsing 100%: stop Brought Forward rows from disabling column alignment on subsequent transactions, handle vertically centered pre+post date narration blocks \u0026 /BRANCH footers, fix Dr/Cr suffix parsing on Overdraft balances (e.g. 241845.44Dr), extract Indian Bank grand Statement Summary \u0026 bank metadata cleanly (100% reconciled 2,665 entries on 344-page statement).",
+    "notes":  "Fix negative \u0026 large rupee value line-wrapping/orientation across KPI \u0026 Ledger summary cards (.money-val nowrap, responsive clamp sizing, and balanced 2x2/4-col auto-fit inside ledger split layout).",
     "windowsAsset":  "LedgerFlow-Setup.exe",
     "androidAsset":  "LedgerFlow.apk",
     "releaseUrl":  "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"
