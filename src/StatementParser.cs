@@ -2622,7 +2622,7 @@ namespace LedgerFlowHost {
                 sb.Append(spans[i].Text);
             }
             string joined = sb.ToString().ToLowerInvariant();
-            return Regex.IsMatch(joined, @"\b(date|dt|value|post|txn|tran|details|particulars|particular|description|narration|remarks|remark|ref|cheque|chq|no\.?|debit|withdrawal|credit|deposit|amount|amt|balance|bal|dr|cr)\b");
+            return Regex.IsMatch(joined, @"(?:\b(?:date|dt|value|post|txn|tran|details|particulars|particular|description|narration|remarks|remark|ref|cheque|chq|no\.?|debit|withdrawal|credit|deposit|amount|amt|balance|bal|dr|cr)\b|₹|\brs\.?)");
         }
 
         private static bool IsPdfHeaderCellRow(List<PdfCellSpan> cells) {
@@ -2873,8 +2873,8 @@ namespace LedgerFlowHost {
                     double minLeft = c == 0 ? 0.0 : cal[c - 1].EndX + 2.0;
                     double maxRight = c == cal.Count - 1 ? 2000.0 : cal[c + 1].X - 2.0;
                     if (sp.X >= minLeft && sp.EndX <= maxRight) {
-                        if (sp.X < cal[c].X && Math.Abs(cal[c].X - sp.X) <= 75.0) cal[c].X = sp.X;
-                        if (sp.EndX > cal[c].EndX && Math.Abs(sp.EndX - cal[c].EndX) <= 75.0) cal[c].EndX = sp.EndX;
+                        if (sp.X < cal[c].X && Math.Abs(cal[c].X - sp.X) <= 180.0) cal[c].X = sp.X;
+                        if (sp.EndX > cal[c].EndX && Math.Abs(sp.EndX - cal[c].EndX) <= 180.0) cal[c].EndX = sp.EndX;
                     }
                 }
             }
@@ -2893,8 +2893,8 @@ namespace LedgerFlowHost {
                         if (sp.X < cal[best].X && sp.X >= minLeft && Math.Abs(cal[best].X - sp.X) <= 32.0) cal[best].X = sp.X;
                         if (sp.EndX > cal[best].EndX && sp.EndX <= maxRight && Math.Abs(sp.EndX - cal[best].EndX) <= 32.0) cal[best].EndX = sp.EndX;
                     } else if (!isNum && !IsPdfPlaceholderDash(sp.Text) && !cal[best].RightAlignHint) {
-                        if (sp.X < cal[best].X && sp.X >= minLeft && Math.Abs(cal[best].X - sp.X) <= 65.0) cal[best].X = sp.X;
-                        if (sp.EndX > cal[best].EndX && sp.EndX <= maxRight && Math.Abs(sp.EndX - cal[best].EndX) <= 65.0) cal[best].EndX = sp.EndX;
+                        if (sp.X < cal[best].X && sp.X >= minLeft && Math.Abs(cal[best].X - sp.X) <= 140.0) cal[best].X = sp.X;
+                        if (sp.EndX > cal[best].EndX && sp.EndX <= maxRight && Math.Abs(sp.EndX - cal[best].EndX) <= 140.0) cal[best].EndX = sp.EndX;
                     }
                 }
             }

@@ -1,7 +1,7 @@
 {
-    "version":  "1.0.9",
+    "version":  "1.0.10",
     "repo":  "dhyanbirprofessional-svg/LedgerFlow",
-    "notes":  "Fix negative \u0026 large rupee value line-wrapping/orientation across KPI \u0026 Ledger summary cards (.money-val nowrap, responsive clamp sizing, and balanced 2x2/4-col auto-fit inside ledger split layout).",
+    "notes":  "Release v1.0.10: Fix Y-skewed final-page PDF date/amount pairing regression (e.g. 27/11/2026 SBI Rs 25 entry before Statement Summary), preserve empty-narration dated anchor rows, widen centered PDF column calibration up to 180pt, prevent double-reading pIdx in extractExtraText, and clarify expected vs parsed summary count mismatch banner.",
     "windowsAsset":  "LedgerFlow-Setup.exe",
     "androidAsset":  "LedgerFlow.apk",
     "releaseUrl":  "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"

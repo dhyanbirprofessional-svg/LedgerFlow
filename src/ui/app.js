@@ -41,7 +41,7 @@
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const API_TOKEN = URL_PARAMS.get("token") || "";
   const IS_PREVIEW_PARAM = URL_PARAMS.get("preview") === "1";
-  const APP_VERSION = "1.0.9";
+  const APP_VERSION = "1.0.10";
   const GITHUB_REPO = "dhyanbirprofessional-svg/LedgerFlow";
 
   let isDesktopHost = false;
@@ -6649,9 +6649,13 @@
     }
     refreshCSVPreview();
     if (summaryMismatch && repEl) {
+      let dCntM = 0, cCntM = 0;
+      for (const e of entries) { if (e.type === "expense") dCntM++; else cCntM++; }
+      const expDrM = sums.reduce((s, x) => s + x.drCount, 0);
+      const expCrM = sums.reduce((s, x) => s + x.crCount, 0);
       repEl.className = "mb-3";
       repEl.style.borderColor = "var(--amber)";
-      repEl.innerHTML = "<strong>⚠ Balance / Count Check:</strong> Statement Summary total differs from extracted entries. Check details or run <strong>Check PDF with Gemini</strong> before clicking Auto-Enter Entries.";
+      repEl.innerHTML = `<strong>⚠ Balance / Count Check:</strong> Bank Summary expects <strong>${expDrM} Dr / ${expCrM} Cr</strong>, parsed <strong>${dCntM} Dr / ${cCntM} Cr</strong>. Check details or run <strong>Check PDF with Gemini</strong> before clicking Auto-Enter Entries.`;
     }
 
     if (hasGeminiCheck && entries.length > 0) {
@@ -6962,7 +6966,7 @@
     const extractExtraText = (r) => {
       const parts = [];
       for (let c = 0; c < r.length; c++) {
-        if (c === dIdx || c === debIdx || c === credIdx || c === amtIdx || c === balIdx || c === drCrIdx || c === refIdx) continue;
+        if (c === dIdx || c === pIdx || c === debIdx || c === credIdx || c === amtIdx || c === balIdx || c === drCrIdx || c === refIdx) continue;
         let t = unwrapBankText(r[c] || "");
         if (!t || isDashPlaceholder(t)) continue;
         if (/^-?[\d,]+\.\d{1,2}(\s*(CR|DR)\.?)?$/i.test(t)) continue;
@@ -7066,14 +7070,31 @@
         const dedupExtra = (rawNarrCell && extractExtraText(r) && extractExtraText(r) !== rawNarrCell)
           ? stripInlineDashes(`${rawNarrCell} ${extractExtraText(r)}`)
           : stripInlineDashes(rawNarrCell || extractExtraText(r));
-        const lineExtra = dedupExtra || extra;
+        const strippedExtra = (dedupExtra || extra)
+          .replace(/^(?:Balance|Value\s+Date|Post\s+Date|Ref\s*No\/?(?:\s*Cheque\s*No)?)\s+(?=(?:WDL|DEP)\s+TFR|UPI\/|IMPS\/|NEFT|RTGS|[A-Z]{4}0[A-Z0-9]{6}\/)/i, "")
+          .trim();
+        const lineExtra = strippedExtra;
+        const cleanLead = lineExtra.replace(/^[\s\-–—•|]+/, "").trim();
+        const isPendingMemo = !!(pendingRow && pendingRow.rawNarration
+          && /\b(?:acknowledg|debt-cum|standing\s+inst|sanction|nominee|kyc)\b/i.test(pendingRow.rawNarration)
+          && !newTxPrefixRe.test(pendingRow.rawNarration.trim()));
 
         if (pendingRow) {
-          const cleanLead = lineExtra.replace(/^[\s\-–—•|]+/, "").trim();
-          if (cleanLead && newTxPrefixRe.test(cleanLead)) {
+          if (absAmt < 0.01 && isPendingMemo && cleanLead && newTxPrefixRe.test(cleanLead)) {
             // Previous pendingRow was a zero-amount bank memo (e.g. Acknowledgement); next transaction started
             pendingRow = null;
             upcomingPreLines.push(cleanLead);
+          } else if (absAmt >= 0.01 && isPendingMemo) {
+            pendingRow = null;
+            const pre = upcomingPreLines.length ? upcomingPreLines.join(" ") : "";
+            upcomingPreLines = [];
+            pendingAmountRow = {
+              type,
+              absAmt,
+              rowBal,
+              colRef,
+              extra: [pre, lineExtra].filter(Boolean).join(" ").trim()
+            };
           } else {
             if (lineExtra) pendingRow.rawNarration = `${pendingRow.rawNarration} ${lineExtra}`.trim();
             if (colRef && !pendingRow.colRef) pendingRow.colRef = colRef;
@@ -7095,7 +7116,6 @@
             extra: [pre, lineExtra].filter(Boolean).join(" ").trim()
           };
         } else if (absAmt < 0.01 && lineExtra) {
-          const cleanLead = lineExtra.replace(/^[\s\-–—•|]+/, "").trim();
           const prev = entries.length ? entries[entries.length - 1] : null;
           if (upcomingPreLines.length > 0 || !prev || prev._narrationClosed || newTxPrefixRe.test(cleanLead)) {
             upcomingPreLines.push(cleanLead);
@@ -7135,14 +7155,12 @@
           pendingAmountRow = null;
           continue;
         }
-        if (combinedNarr) {
-          pendingRow = {
-            isoDate,
-            rawNarration: combinedNarr,
-            colRef,
-            rowBal
-          };
-        }
+        pendingRow = {
+          isoDate,
+          rawNarration: combinedNarr,
+          colRef,
+          rowBal
+        };
         continue;
       }
 

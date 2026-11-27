@@ -2884,7 +2884,7 @@ public final class StatementParser {
             sb.append(spans.get(i).text == null ? "" : spans.get(i).text);
         }
         String joined = sb.toString().toLowerCase(Locale.US);
-        return Pattern.compile("\\b(date|dt|value|post|txn|tran|details|particulars|particular|description|narration|remarks|remark|ref|cheque|chq|no\\.?|debit|withdrawal|credit|deposit|amount|amt|balance|bal|dr|cr)\\b")
+        return Pattern.compile("(?:\\b(?:date|dt|value|post|txn|tran|details|particulars|particular|description|narration|remarks|remark|ref|cheque|chq|no\\.?|debit|withdrawal|credit|deposit|amount|amt|balance|bal|dr|cr)\\b|\u20B9|\\brs\\.?)")
                 .matcher(joined).find();
     }
 
@@ -3157,8 +3157,8 @@ public final class StatementParser {
                 double minLeft = c == 0 ? 0.0 : cal.get(c - 1).endX + 2.0;
                 double maxRight = c == cal.size() - 1 ? 2000.0 : cal.get(c + 1).x - 2.0;
                 if (sp.x >= minLeft && sp.endX <= maxRight) {
-                    if (sp.x < hc.x && Math.abs(hc.x - sp.x) <= 75.0) hc.x = sp.x;
-                    if (sp.endX > hc.endX && Math.abs(sp.endX - hc.endX) <= 75.0) hc.endX = sp.endX;
+                    if (sp.x < hc.x && Math.abs(hc.x - sp.x) <= 180.0) hc.x = sp.x;
+                    if (sp.endX > hc.endX && Math.abs(sp.endX - hc.endX) <= 180.0) hc.endX = sp.endX;
                 }
             }
         }
@@ -3177,8 +3177,8 @@ public final class StatementParser {
                     if (sp.x < bc.x && sp.x >= minLeft && Math.abs(bc.x - sp.x) <= 32.0) bc.x = sp.x;
                     if (sp.endX > bc.endX && sp.endX <= maxRight && Math.abs(sp.endX - bc.endX) <= 32.0) bc.endX = sp.endX;
                 } else if (!isNum && !isPdfPlaceholderDash(sp.text) && !bc.rightAlignHint) {
-                    if (sp.x < bc.x && sp.x >= minLeft && Math.abs(bc.x - sp.x) <= 65.0) bc.x = sp.x;
-                    if (sp.endX > bc.endX && sp.endX <= maxRight && Math.abs(sp.endX - bc.endX) <= 65.0) bc.endX = sp.endX;
+                    if (sp.x < bc.x && sp.x >= minLeft && Math.abs(bc.x - sp.x) <= 140.0) bc.x = sp.x;
+                    if (sp.endX > bc.endX && sp.endX <= maxRight && Math.abs(sp.endX - bc.endX) <= 140.0) bc.endX = sp.endX;
                 }
             }
         }
