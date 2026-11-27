@@ -51,12 +51,14 @@ public final class StatementParser {
         public boolean needsPassword;
         public String format = "";
         public String error = "";
+        public int pageCount;
         public List<List<String>> rows = new ArrayList<List<String>>();
 
         public String toJson() {
             StringBuilder sb = new StringBuilder(4096);
             sb.append("{\"ok\":").append(ok);
             sb.append(",\"needsPassword\":").append(needsPassword);
+            sb.append(",\"pageCount\":").append(pageCount);
             sb.append(",\"format\":");
             appendJsonString(sb, format);
             sb.append(",\"error\":");
@@ -1715,6 +1717,7 @@ public final class StatementParser {
             xobjCache.clear();
             if (allFrags.isEmpty()) {
                 res.format = "pdf-scanned";
+                res.pageCount = Math.max(1, totalPages > 0 ? totalPages : pageNum);
                 res.error = "No selectable text found in this PDF (it looks like a scanned image PDF). Use 'Paste / OCR Text' or configure Vision AI in Settings.";
                 return res;
             }
@@ -1724,11 +1727,13 @@ public final class StatementParser {
             allFrags.clear();
             if (rows.isEmpty()) {
                 res.format = "pdf-empty";
+                res.pageCount = Math.max(1, totalPages > 0 ? totalPages : pageNum);
                 res.error = "Could not extract readable transaction rows from this PDF.";
                 return res;
             }
             res.ok = true;
             res.format = "pdf";
+            res.pageCount = Math.max(1, totalPages > 0 ? totalPages : pageNum);
             res.rows = rows;
             return res;
         } catch (Exception ex) {

@@ -41,7 +41,7 @@
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const API_TOKEN = URL_PARAMS.get("token") || "";
   const IS_PREVIEW_PARAM = URL_PARAMS.get("preview") === "1";
-  const APP_VERSION = "1.0.10";
+  const APP_VERSION = "1.0.11";
   const GITHUB_REPO = "dhyanbirprofessional-svg/LedgerFlow";
 
   let isDesktopHost = false;
@@ -5770,32 +5770,52 @@
     return tx;
   }
 
-  async function aiNativePost(url, headers, bodyObj) {
-    const bodyStr = JSON.stringify(bodyObj);
+  async function aiNativeRequest({ url, method = "POST", headers = {}, bodyObj = null, rawBase64 = "", timeoutMs = 240000 }) {
+    const m = String(method || "POST").toUpperCase();
+    const effTimeout = Math.max(10000, Math.min(300000, Number(timeoutMs) || 240000));
+    const bodyStr = rawBase64 ? "" : (bodyObj === null || bodyObj === undefined ? "" : (typeof bodyObj === "string" ? bodyObj : JSON.stringify(bodyObj)));
     if (window.LedgerFlowAndroid) {
       let raw;
-      if (typeof window.LedgerFlowAndroid.aiHttpPostAsync === "function") {
-        raw = await callAndroidAsync("aiHttpPostAsync", [url, JSON.stringify(headers || {}), bodyStr]);
-      } else if (typeof window.LedgerFlowAndroid.aiHttpPost === "function") {
+      if (typeof window.LedgerFlowAndroid.aiHttpRequestAsync === "function") {
+        raw = await callAndroidAsync("aiHttpRequestAsync", [url, m, JSON.stringify(headers || {}), bodyStr, String(rawBase64 || ""), effTimeout], effTimeout + 10000);
+      } else if (m === "POST" && !rawBase64 && typeof window.LedgerFlowAndroid.aiHttpPostAsync === "function") {
+        raw = await callAndroidAsync("aiHttpPostAsync", [url, JSON.stringify(headers || {}), bodyStr], effTimeout + 10000);
+      } else if (m === "POST" && !rawBase64 && typeof window.LedgerFlowAndroid.aiHttpPost === "function") {
         raw = window.LedgerFlowAndroid.aiHttpPost(url, JSON.stringify(headers || {}), bodyStr);
       }
       if (raw) {
         const parsed = JSON.parse(raw);
         if (!parsed.ok) throw new Error(parsed.error || ("HTTP " + parsed.status));
-        return JSON.parse(parsed.body || "{}");
+        return parsed.body ? JSON.parse(parsed.body) : {};
       }
     }
     if (isDesktopHost) {
       const proxyRes = await apiFetch("/api/ai-http", {
         method: "POST",
-        body: JSON.stringify({ url, headers: headers || {}, body: bodyStr })
+        body: JSON.stringify({ url, method: m, headers: headers || {}, body: bodyStr, rawBase64: rawBase64 || "", timeoutMs: effTimeout })
       });
       if (!proxyRes.ok) throw new Error(proxyRes.error || ("HTTP " + proxyRes.status));
-      return JSON.parse(proxyRes.body || "{}");
+      return proxyRes.body ? JSON.parse(proxyRes.body) : {};
     }
-    const resp = await fetch(url, { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, headers || {}), body: bodyStr });
+    const fetchOpts = { method: m, headers: Object.assign(rawBase64 ? {} : { "Content-Type": "application/json" }, headers || {}) };
+    if (m === "POST") {
+      if (rawBase64) {
+        const bin = atob(rawBase64);
+        const u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        fetchOpts.body = u8;
+      } else {
+        fetchOpts.body = bodyStr;
+      }
+    }
+    const resp = await fetch(url, fetchOpts);
     if (!resp.ok) throw new Error("HTTP " + resp.status + " " + (await resp.text()));
-    return resp.json();
+    const txt = await resp.text();
+    return txt ? JSON.parse(txt) : {};
+  }
+
+  async function aiNativePost(url, headers, bodyObj, timeoutMs = 240000) {
+    return aiNativeRequest({ url, method: "POST", headers, bodyObj, timeoutMs });
   }
 
   function extractJsonArrayFromLlmText(text) {
@@ -5804,19 +5824,35 @@
     const startArr = cleaned.indexOf("[");
     if (startArr >= 0 && (startObj < 0 || startArr < startObj)) {
       const endArr = cleaned.lastIndexOf("]");
-      if (endArr > startArr) return JSON.parse(cleaned.slice(startArr, endArr + 1));
+      if (endArr > startArr) {
+        try { return JSON.parse(cleaned.slice(startArr, endArr + 1)); } catch (_) {}
+      }
     }
     if (startObj >= 0) {
       const endObj = cleaned.lastIndexOf("}");
       if (endObj > startObj) {
-        const obj = JSON.parse(cleaned.slice(startObj, endObj + 1));
-        if (Array.isArray(obj)) return obj;
-        if (Array.isArray(obj.items)) return obj.items;
-        if (Array.isArray(obj.results)) return obj.results;
-        if (Array.isArray(obj.transactions)) return obj.transactions;
+        try {
+          const obj = JSON.parse(cleaned.slice(startObj, endObj + 1));
+          if (Array.isArray(obj)) return obj;
+          if (Array.isArray(obj.items)) return obj.items;
+          if (Array.isArray(obj.results)) return obj.results;
+          if (Array.isArray(obj.transactions)) return obj.transactions;
+        } catch (_) {}
       }
     }
-    return JSON.parse(cleaned);
+    try {
+      return JSON.parse(cleaned);
+    } catch (_) {
+      // Salvage complete {...} objects if response JSON truncated mid-array
+      const salvaged = [];
+      const objRe = /\{[^{}]*"date"\s*:\s*"[^"]*"[^{}]*\}/g;
+      let m;
+      while ((m = objRe.exec(cleaned)) !== null) {
+        try { salvaged.push(JSON.parse(m[0])); } catch (_) {}
+      }
+      if (salvaged.length) return salvaged;
+      throw new Error("Could not parse AI Vision response as JSON.");
+    }
   }
 
   let resolvedGeminiModelCache = "";
@@ -5860,7 +5896,7 @@
       tried.add(model);
       const url = `${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
       try {
-        const json = await aiNativePost(url, {}, bodyObj);
+        const json = await aiNativePost(url, {}, bodyObj, 240000);
         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
         resolvedGeminiModelCache = model;
         if (rawPrimary && retiredRe.test(rawPrimary) && state?.settings?.aiConfig) {
@@ -5871,7 +5907,8 @@
       } catch (err) {
         lastErr = err;
         const msg = String(err?.message || "");
-        if (!/HTTP\s+(429|404|503)\b/i.test(msg)) throw err;
+        const isTransient = /HTTP\s+(429|404|500|502|503|504)\b|timed\s*out|timeout|not\s+found|not\s+supported/i.test(msg);
+        if (!isTransient) throw err;
         const sugM = msg.match(/use\s+(?:models\/)?(gemini-[A-Za-z0-9._-]+)/i);
         if (sugM && sugM[1] && !tried.has(sugM[1])) {
           queue.unshift(sugM[1]);
@@ -6038,9 +6075,44 @@
     return 0;
   }
 
-  function renderAppUpdateBanner() {
+  let isScanningUpdates = false;
+
+  function setUpdateScanState(scanMode, extraLabel = "") {
     const dot = document.getElementById("topbar-update-dot");
-    if (dot) dot.classList.toggle("hidden", !(latestUpdateInfo && latestUpdateInfo.hasUpdate));
+    const stLbl = document.getElementById("topbar-update-status");
+    const btn = document.getElementById("topbar-update-btn");
+    if (dot) {
+      dot.classList.toggle("checking", scanMode === "scanning");
+      dot.classList.toggle("hidden", scanMode !== "scanning" && !(latestUpdateInfo && latestUpdateInfo.hasUpdate));
+    }
+    if (stLbl) {
+      if (scanMode === "scanning") {
+        stLbl.textContent = "Scanning updates…";
+        stLbl.style.color = "var(--primary)";
+        stLbl.classList.remove("hidden");
+      } else if (latestUpdateInfo && latestUpdateInfo.hasUpdate) {
+        stLbl.textContent = `⬆ v${latestUpdateInfo.version} Ready`;
+        stLbl.style.color = "var(--emerald)";
+        stLbl.classList.remove("hidden");
+      } else if (scanMode === "done") {
+        stLbl.textContent = extraLabel || `✓ v${APP_VERSION}`;
+        stLbl.style.color = "var(--text-muted)";
+        stLbl.classList.remove("hidden");
+      } else if (scanMode === "error") {
+        stLbl.textContent = `v${APP_VERSION}`;
+        stLbl.style.color = "var(--text-muted)";
+        stLbl.classList.remove("hidden");
+      }
+    }
+    if (btn) {
+      btn.title = scanMode === "scanning"
+        ? "Scanning GitHub for latest LedgerFlow updates…"
+        : (latestUpdateInfo?.hasUpdate ? `Update v${latestUpdateInfo.version} available — click to install` : `LedgerFlow v${APP_VERSION} (Click to scan for updates)`);
+    }
+  }
+
+  function renderAppUpdateBanner() {
+    setUpdateScanState(isScanningUpdates ? "scanning" : "done");
     const banner = document.getElementById("app-update-banner");
     if (!banner) return;
     if (!latestUpdateInfo || !latestUpdateInfo.hasUpdate || updateBannerDismissed) {
@@ -6093,6 +6165,9 @@
   }
 
   async function checkForAppUpdates(silent = true) {
+    if (isScanningUpdates) return latestUpdateInfo || { ok: false, hasUpdate: false };
+    isScanningUpdates = true;
+    setUpdateScanState("scanning");
     const ghToken = String(state?.settings?.githubToken || "").trim();
     try {
       let info = null;
@@ -6105,7 +6180,7 @@
       } else if (isDesktopHost) {
         const hdrs = { "X-LedgerFlow-Token": API_TOKEN };
         if (ghToken) hdrs["X-GitHub-Token"] = ghToken;
-        const r = await fetch("/api/check-update", { headers: hdrs, cache: "no-store" });
+        const r = await fetch(`/api/check-update?t=${Date.now()}`, { headers: hdrs, cache: "no-store" });
         info = await r.json();
       } else {
         const hdrs = { Accept: "application/vnd.github+json" };
@@ -6125,10 +6200,25 @@
             releaseUrl: d.html_url || `https://github.com/${GITHUB_REPO}/releases`
           };
         } else {
-          info = { ok: false, status: r.status, error: r.status === 404 ? "No public release found (repo may be private or no release published yet)." : `GitHub HTTP ${r.status}` };
+          const rawR = await fetch(`https://raw.githubusercontent.com/${GITHUB_REPO}/main/version.json?t=${Date.now()}`, { cache: "no-store" });
+          if (rawR.ok) {
+            const vd = await rawR.json();
+            info = {
+              ok: !!vd.version,
+              version: String(vd.version || "").replace(/^v/i, ""),
+              notes: vd.notes || "",
+              windowsUrl: `https://raw.githubusercontent.com/${GITHUB_REPO}/main/LedgerFlow-Setup.exe`,
+              androidUrl: `https://raw.githubusercontent.com/${GITHUB_REPO}/main/LedgerFlow.apk`,
+              releaseUrl: vd.releaseUrl || `https://github.com/${GITHUB_REPO}/releases`
+            };
+          } else {
+            info = { ok: false, status: r.status, error: r.status === 404 ? "No public release found (repo may be private or no release published yet)." : `GitHub HTTP ${r.status}` };
+          }
         }
       }
+      isScanningUpdates = false;
       if (!info || !info.ok) {
+        setUpdateScanState("error");
         if (!silent && info?.error) toast(info.error, true);
         return { ok: false, hasUpdate: false, error: info?.error || "Could not check GitHub updates." };
       }
@@ -6150,6 +6240,8 @@
       }
       return latestUpdateInfo;
     } catch (err) {
+      isScanningUpdates = false;
+      setUpdateScanState("error");
       if (!silent) toast("Update check failed: " + (err?.message || err), true);
       return { ok: false, hasUpdate: false, error: err?.message || String(err) };
     }
@@ -7726,7 +7818,51 @@
     return out.length > 1 ? out : [];
   }
 
-  async function extractStatementViaOcrAi({ rawText = "", rows = null, dataUrl = "", mimeType = "", fileName = "" }) {
+  async function uploadGeminiFileForVision(b64Payload, mimeType, fileName, aiCfg) {
+    const key = String(aiCfg?.apiKey || "").trim();
+    if (!key) throw new Error("Gemini API key is missing. Add a free key from aistudio.google.com/apikey in Settings.");
+    const hostBase = (aiCfg?.endpoint || "https://generativelanguage.googleapis.com/v1beta").replace(/\/v\d[^/]*\/?$/, "");
+    const apiBase = (aiCfg?.endpoint || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, "");
+    const uploadUrl = `${hostBase}/upload/v1beta/files?key=${encodeURIComponent(key)}`;
+    const safeName = String(fileName || "statement.pdf").replace(/[^\x20-\x7E]/g, "_");
+    const upRes = await aiNativeRequest({
+      url: uploadUrl,
+      method: "POST",
+      headers: {
+        "Content-Type": mimeType || "application/pdf",
+        "X-Goog-Upload-Protocol": "raw",
+        "X-Goog-Upload-Command": "upload, finalize",
+        "X-Goog-Upload-File-Name": safeName
+      },
+      rawBase64: b64Payload,
+      timeoutMs: 240000
+    });
+    const fileObj = upRes?.file || upRes;
+    if (!fileObj || !fileObj.uri) throw new Error("Gemini File upload did not return a file URI.");
+    let stateStr = String(fileObj.state || "ACTIVE").toUpperCase();
+    let polls = 0;
+    while (stateStr === "PROCESSING" && polls < 30 && fileObj.name) {
+      polls++;
+      await new Promise((r) => setTimeout(r, 1500));
+      const chk = await aiNativeRequest({
+        url: `${apiBase}/${fileObj.name}?key=${encodeURIComponent(key)}`,
+        method: "GET",
+        timeoutMs: 30000
+      });
+      const cur = chk?.file || chk;
+      stateStr = String(cur?.state || "ACTIVE").toUpperCase();
+      if (stateStr === "FAILED") throw new Error("Gemini File processing failed.");
+    }
+    return {
+      uri: fileObj.uri,
+      name: fileObj.name || "",
+      mimeType: fileObj.mimeType || mimeType || "application/pdf",
+      apiBase,
+      key
+    };
+  }
+
+  async function extractStatementViaOcrAi({ rawText = "", rows = null, dataUrl = "", mimeType = "", fileName = "", pageCount = 0 }) {
     const aiCfg = state.settings.aiConfig || {};
     const prov = aiCfg.provider || "none";
     const textInput = rawText || (Array.isArray(rows) ? rows.map((r) => (r || []).filter(Boolean).join(" | ")).join("\n") : "");
@@ -7753,6 +7889,111 @@
     const b64Payload = isMedia && dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
 
     if (prov === "gemini") {
+      const useChunkedFilesApi = isMedia && mimeType === "application/pdf" && (b64Payload.length > 5 * 1024 * 1024 || pageCount > 8);
+      if (useChunkedFilesApi) {
+        const sizeMb = (b64Payload.length * 0.75 / (1024 * 1024)).toFixed(1);
+        updatePdfProgress({
+          phase: "reading",
+          title: "🧠 Vision AI Reading Scanned PDF...",
+          sub: `Uploading "${fileName}" (${sizeMb} MB) to Gemini Vision File API...`,
+          percent: 12,
+          stats: pageCount > 0 ? `${pageCount} scanned page(s) queued...` : "Preparing Vision upload..."
+        });
+        const uploaded = await uploadGeminiFileForVision(b64Payload, mimeType, fileName, aiCfg);
+        const batchSize = 6;
+        const totalEst = pageCount > 0 ? pageCount : 0;
+        const allItems = [];
+        let startPg = 1;
+        let emptyRuns = 0;
+        try {
+          for (let b = 0; b < 120; b++) {
+            if (totalEst > 0 && startPg > totalEst) break;
+            const endPg = totalEst > 0 ? Math.min(totalEst, startPg + batchSize - 1) : (startPg + batchSize - 1);
+            const pct = totalEst > 0
+              ? Math.min(95, Math.round(18 + 75 * (startPg - 1) / totalEst))
+              : Math.min(90, 20 + b * 10);
+            updatePdfProgress({
+              phase: "reading",
+              title: "🧠 Vision AI Reading Scanned PDF...",
+              sub: totalEst > 0
+                ? `Vision AI reading pages ${startPg}–${endPg} of ${totalEst}...`
+                : `Vision AI reading pages ${startPg}–${endPg}...`,
+              percent: pct,
+              stats: `${allItems.length} transaction(s) extracted so far`,
+              feed: allItems.slice(-6).map((it) => `${it.date || ""} • ${String(it.narration || "").slice(0, 34)} • ₹${Number(it.debit || it.credit || 0)}`)
+            });
+            const batchPrompt =
+              `Extract ONLY the bank transactions appearing on PDF pages ${startPg} through ${endPg} (inclusive) from "${fileName}". ` +
+              "Do NOT include transactions from earlier or later pages, and do NOT include Statement Summary totals as transactions. " +
+              "If those pages do not exist or contain zero transactions (e.g. summary/disclaimer only), return [].";
+            const gRes = await callGeminiWithFallback({
+              systemInstruction: { parts: [{ text: ocrPrompt }] },
+              contents: [{
+                role: "user",
+                parts: [
+                  { fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.uri } },
+                  { text: batchPrompt }
+                ]
+              }],
+              generationConfig: { temperature: 0.05, responseMimeType: "application/json", maxOutputTokens: 16384 }
+            }, aiCfg);
+            let batchArr = [];
+            try { batchArr = extractJsonArrayFromLlmText(gRes.text); } catch (_) { batchArr = []; }
+            if (Array.isArray(batchArr) && batchArr.length > 0) {
+              emptyRuns = 0;
+              for (let k = 0; k < batchArr.length; k++) {
+                const it = batchArr[k];
+                if (!it || typeof it !== "object") continue;
+                if (k === 0 && allItems.length > 0) {
+                  const prevIt = allItems[allItems.length - 1];
+                  if (String(prevIt.date || "") === String(it.date || "")
+                    && String(prevIt.narration || "").trim() === String(it.narration || "").trim()
+                    && Number(prevIt.debit || 0) === Number(it.debit || 0)
+                    && Number(prevIt.credit || 0) === Number(it.credit || 0)
+                    && String(prevIt.balance ?? "") === String(it.balance ?? "")) {
+                    continue;
+                  }
+                }
+                allItems.push(it);
+              }
+            } else {
+              emptyRuns++;
+              if (totalEst <= 0 && emptyRuns >= 2) break;
+            }
+            startPg = endPg + 1;
+          }
+        } finally {
+          if (uploaded?.name) {
+            aiNativeRequest({
+              url: `${uploaded.apiBase}/${uploaded.name}?key=${encodeURIComponent(uploaded.key)}`,
+              method: "DELETE",
+              timeoutMs: 15000
+            }).catch(() => {});
+          }
+        }
+        if (!allItems.length) {
+          throw new Error("Vision AI could not extract transaction rows from this scanned PDF.");
+        }
+        updatePdfProgress({
+          phase: "done",
+          sub: `Vision AI extracted ${allItems.length} transaction(s)!`,
+          percent: 98,
+          stats: `${allItems.length} row(s) ready`
+        });
+        const normChunked = [["Txn Date", "Narration", "Ref No", "Withdrawal", "Deposit", "Balance"]];
+        for (const item of allItems) {
+          normChunked.push([
+            String(item.date || ""),
+            String(item.narration || item.details || item.particulars || "Bank Entry"),
+            String(item.refNo || item.ref || ""),
+            Number(item.debit || item.withdrawal || 0) > 0 ? String(item.debit || item.withdrawal) : "",
+            Number(item.credit || item.deposit || 0) > 0 ? String(item.credit || item.deposit) : "",
+            item.balance !== undefined && item.balance !== null ? String(item.balance) : ""
+          ]);
+        }
+        return { rows: normChunked, viaOcr: true };
+      }
+
       const parts = [];
       if (isMedia) {
         parts.push({ inlineData: { mimeType: mimeType || "application/pdf", data: b64Payload } });
@@ -7763,7 +8004,7 @@
       const gRes = await callGeminiWithFallback({
         systemInstruction: { parts: [{ text: ocrPrompt }] },
         contents: [{ role: "user", parts }],
-        generationConfig: { temperature: 0.05, responseMimeType: "application/json" }
+        generationConfig: { temperature: 0.05, responseMimeType: "application/json", maxOutputTokens: 16384 }
       }, aiCfg);
       textOut = gRes.text;
     } else if (prov === "openai") {
@@ -7930,8 +8171,8 @@
           // If scanned PDF and external AI is configured, fall back to AI Vision/PDF OCR
           const aiCfg = state.settings.aiConfig || {};
           if (aiCfg.provider && aiCfg.provider !== "none" && aiCfg.mode !== "local") {
-            updatePdfProgress({ title: "🧠 AI is Reading Scanned PDF...", sub: "Scanned PDF detected — extracting transactions via Vision AI...", percent: 45, stats: "Running Vision OCR..." });
-            const ocrRes = await extractStatementViaOcrAi({ rawText: "", dataUrl, mimeType: "application/pdf", fileName: file.name });
+            updatePdfProgress({ phase: "reading", title: "🧠 AI is Reading Scanned PDF...", sub: "Scanned PDF detected — extracting transactions via Vision AI...", percent: 25, stats: res?.pageCount ? `${res.pageCount} page(s) • Starting Vision AI...` : "Running Vision OCR..." });
+            const ocrRes = await extractStatementViaOcrAi({ rawText: "", dataUrl, mimeType: "application/pdf", fileName: file.name, pageCount: res?.pageCount || 0 });
             hidePdfProgress();
             handedOffToModal = true;
             const meta = extractBankMeta(ocrRes.rows);
@@ -7985,8 +8226,13 @@
     }
 
     if (isImage) {
+      let handedOffImg = false;
       try {
-        toast("🔍 Converting statement image via OCR + AI...");
+        showPdfProgress("🧠 Vision AI Reading Image...", `Scanning "${file.name}" for statement transactions...`, {
+          phase: "reading",
+          percent: 25,
+          stats: "Sending image to Vision AI..."
+        });
         const dataUrl = await readAsDataUrl(file);
         const ocrRes = await extractStatementViaOcrAi({
           rawText: "",
@@ -7994,6 +8240,8 @@
           mimeType: mime || "image/png",
           fileName: file.name
         });
+        hidePdfProgress();
+        handedOffImg = true;
         const meta = extractBankMeta(ocrRes.rows);
         meta.viaOcr = true;
         meta.fileName = file.name;
@@ -8001,6 +8249,8 @@
         loadRowsIntoStatementModal(ocrRes.rows, meta, exportOnly);
       } catch (err) {
         toast("Image OCR extraction: " + err.message);
+      } finally {
+        if (!handedOffImg) hidePdfProgress();
       }
       return;
     }
@@ -8792,7 +9042,15 @@
     if (updInstallBtn) updInstallBtn.onclick = () => triggerAppUpdateInstall();
     const updDismissBtn = document.getElementById("app-update-dismiss-btn");
     if (updDismissBtn) updDismissBtn.onclick = () => { updateBannerDismissed = true; renderAppUpdateBanner(); };
-    setTimeout(() => { checkForAppUpdates(true); }, 2500);
+
+    // Always auto-scan for updates every time the app opens (with retry once internet comes up)
+    let startupScanOk = false;
+    const runStartupUpdateScan = async () => {
+      const r = await checkForAppUpdates(true);
+      if (r && r.ok) startupScanOk = true;
+    };
+    setTimeout(() => { runStartupUpdateScan(); }, 180);
+    window.addEventListener("online", () => { if (!startupScanOk) runStartupUpdateScan(); });
 
     const needsBio = !!state.settings.biometricLock;
     const needsPin = !!state.settings.pinHash;

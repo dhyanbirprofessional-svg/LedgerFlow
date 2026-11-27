@@ -538,7 +538,12 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void aiHttpPostAsync(final String cbId, final String urlStr, final String headersJson, final String bodyJson) {
-            bgExecutor.execute(() -> dispatchAsyncResult(cbId, aiHttpPost(urlStr, headersJson, bodyJson)));
+            bgExecutor.execute(() -> dispatchAsyncResult(cbId, aiHttpRequestSync(urlStr, "POST", headersJson, bodyJson, "", 240000)));
+        }
+
+        @JavascriptInterface
+        public void aiHttpRequestAsync(final String cbId, final String urlStr, final String method, final String headersJson, final String bodyText, final String rawBase64, final int timeoutMs) {
+            bgExecutor.execute(() -> dispatchAsyncResult(cbId, aiHttpRequestSync(urlStr, method, headersJson, bodyText, rawBase64, timeoutMs)));
         }
 
         @JavascriptInterface
@@ -617,7 +622,7 @@ public class MainActivity extends Activity {
             String repo = "dhyanbirprofessional-svg/LedgerFlow";
             String[] urls = new String[] {
                 "https://api.github.com/repos/" + repo + "/releases/latest",
-                "https://raw.githubusercontent.com/" + repo + "/main/version.json"
+                "https://raw.githubusercontent.com/" + repo + "/main/version.json?t=" + (System.currentTimeMillis() / 1000L)
             };
             int lastCode = 0;
             for (int u = 0; u < urls.length; u++) {
@@ -625,8 +630,9 @@ public class MainActivity extends Activity {
                 try {
                     conn = (HttpURLConnection) new URL(urls[u]).openConnection();
                     conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(7000);
-                    conn.setReadTimeout(7000);
+                    conn.setUseCaches(false);
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(10000);
                     conn.setRequestProperty("User-Agent", "LedgerFlow-Android/1.0");
                     conn.setRequestProperty("Accept", "application/vnd.github+json");
                     if (ghToken != null && !ghToken.trim().isEmpty()) {
@@ -699,6 +705,10 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String aiHttpPost(String urlStr, String headersJson, String bodyJson) {
+            return aiHttpRequestSync(urlStr, "POST", headersJson, bodyJson, "", 240000);
+        }
+
+        private String aiHttpRequestSync(String urlStr, String method, String headersJson, String bodyJson, String rawBase64, int timeoutMs) {
             HttpURLConnection conn = null;
             try {
                 URL url = new URL(urlStr);
@@ -706,11 +716,13 @@ public class MainActivity extends Activity {
                 if (!"https".equalsIgnoreCase(proto) && !"http".equalsIgnoreCase(proto)) {
                     return "{\"ok\":false,\"status\":0,\"error\":\"Only HTTP/HTTPS endpoints are allowed.\"}";
                 }
+                String m = (method == null || method.trim().isEmpty()) ? "POST" : method.trim().toUpperCase(Locale.US);
+                if (!"GET".equals(m) && !"POST".equals(m) && !"DELETE".equals(m)) m = "POST";
+                int effectiveTimeout = Math.max(10000, Math.min(300000, timeoutMs > 0 ? timeoutMs : 240000));
                 conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(45000);
-                conn.setDoOutput(true);
+                conn.setRequestMethod(m);
+                conn.setConnectTimeout(20000);
+                conn.setReadTimeout(effectiveTimeout);
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
                 if (headersJson != null && headersJson.trim().startsWith("{")) {
                     JSONObject hdrs = new JSONObject(headersJson);
@@ -720,9 +732,15 @@ public class MainActivity extends Activity {
                         conn.setRequestProperty(k, hdrs.optString(k, ""));
                     }
                 }
-                byte[] outBytes = (bodyJson == null ? "" : bodyJson).getBytes(StandardCharsets.UTF_8);
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(outBytes);
+                if ("POST".equals(m)) {
+                    conn.setDoOutput(true);
+                    byte[] outBytes = (rawBase64 != null && !rawBase64.isEmpty())
+                        ? android.util.Base64.decode(rawBase64, android.util.Base64.DEFAULT)
+                        : (bodyJson == null ? "" : bodyJson).getBytes(StandardCharsets.UTF_8);
+                    conn.setFixedLengthStreamingMode(outBytes.length);
+                    try (OutputStream os = conn.getOutputStream()) {
+                        os.write(outBytes);
+                    }
                 }
                 int code = conn.getResponseCode();
                 InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();

@@ -653,6 +653,7 @@ input:focus, select:focus, textarea:focus {
   .t-ledger-col.mobile-hidden { display: none; }
 }
 @media (max-width: 680px) {
+  #topbar-update-status { display: none; }
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
   .kpi-card { padding: 12px 13px; gap: 4px; }
   .kpi-label { font-size: 11.5px; }
@@ -734,6 +735,10 @@ input:focus, select:focus, textarea:focus {
 .update-dot {
   position: absolute; top: 5px; right: 5px; width: 8px; height: 8px;
   border-radius: 50%; background: var(--emerald); box-shadow: 0 0 0 2px var(--surface);
+}
+.update-dot.checking {
+  background: var(--primary);
+  animation: lfSpin 1.1s linear infinite;
 }
 
 /* PDF / AI Reading Progress Dialog */

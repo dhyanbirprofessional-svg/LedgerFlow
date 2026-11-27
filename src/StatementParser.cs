@@ -17,6 +17,7 @@ namespace LedgerFlowHost {
             public bool needsPassword;
             public string format;
             public string error;
+            public int pageCount;
             public List<List<string>> rows;
         }
 
@@ -1467,6 +1468,7 @@ namespace LedgerFlowHost {
                     return new ParseResult {
                         ok = false,
                         format = "pdf-scanned",
+                        pageCount = Math.Max(1, totalPages > 0 ? totalPages : pageNum),
                         error = "No selectable text found in this PDF (it looks like a scanned image PDF). Use 'Paste / OCR Text' or configure Vision AI in Settings."
                     };
                 }
@@ -1478,11 +1480,12 @@ namespace LedgerFlowHost {
                     return new ParseResult {
                         ok = false,
                         format = "pdf-empty",
+                        pageCount = Math.Max(1, totalPages > 0 ? totalPages : pageNum),
                         error = "Could not extract readable transaction rows from this PDF."
                     };
                 }
                 UpdateJobProgress(job, "done", string.Format("Extracted {0} row(s) from {1} page(s).", rows.Count, Math.Max(1, totalPages)), totalPages, totalPages, 98, Math.Max(0, rows.Count - 1));
-                return new ParseResult { ok = true, format = "pdf", rows = rows };
+                return new ParseResult { ok = true, format = "pdf", pageCount = Math.Max(1, totalPages > 0 ? totalPages : pageNum), rows = rows };
             } catch (Exception ex) {
                 return new ParseResult { ok = false, format = "pdf", error = "Failed to parse PDF locally: " + ex.Message };
             }

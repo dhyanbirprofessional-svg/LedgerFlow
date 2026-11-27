@@ -1,7 +1,7 @@
 {
-    "version":  "1.0.10",
+    "version":  "1.0.11",
     "repo":  "dhyanbirprofessional-svg/LedgerFlow",
-    "notes":  "Release v1.0.10: Fix Y-skewed final-page PDF date/amount pairing regression (e.g. 27/11/2026 SBI Rs 25 entry before Statement Summary), preserve empty-narration dated anchor rows, widen centered PDF column calibration up to 180pt, prevent double-reading pIdx in extractExtraText, and clarify expected vs parsed summary count mismatch banner.",
+    "notes":  "Release v1.0.11: Fix Vision AI HTTP 0 timeout on scanned PDFs \u0026 images by raising AI proxy timeouts to 240s/300s (Desktop + Android), raising proxy payload limit to 128 MB, returning scanned PDF pageCount, adding Gemini Files API raw upload + 6-page chunked Vision OCR with live progress \u0026 truncated-JSON recovery, and auto-scanning GitHub for updates on every app launch with live topbar status.",
     "windowsAsset":  "LedgerFlow-Setup.exe",
     "androidAsset":  "LedgerFlow.apk",
     "releaseUrl":  "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"

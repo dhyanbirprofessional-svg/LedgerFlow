@@ -254,8 +254,8 @@ namespace LedgerFlowHost {
 
         static void HandleClient(TcpClient client) {
             using (client) {
-                client.ReceiveTimeout = 120000;
-                client.SendTimeout = 120000;
+                client.ReceiveTimeout = 300000;
+                client.SendTimeout = 300000;
                 try {
                     using (var ns = client.GetStream()) {
                         var headerBuf = new MemoryStream();
@@ -564,8 +564,9 @@ namespace LedgerFlowHost {
             ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls;
             var req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "GET";
-            req.Timeout = 7000;
-            req.ReadWriteTimeout = 7000;
+            req.Timeout = 10000;
+            req.ReadWriteTimeout = 10000;
+            req.CachePolicy = new System.Net.Cache.RequestCachePolicy(System.Net.Cache.RequestCacheLevel.NoCacheNoStore);
             req.UserAgent = "LedgerFlow-Updater/1.0";
             req.Accept = "application/vnd.github+json";
             if (!string.IsNullOrEmpty(ghToken)) {
@@ -617,7 +618,7 @@ namespace LedgerFlowHost {
                 }
 
                 int rawCode = 0;
-                string verJson = FetchGitHubText("https://raw.githubusercontent.com/" + GitHubRepo + "/main/version.json", ghToken, out rawCode);
+                string verJson = FetchGitHubText("https://raw.githubusercontent.com/" + GitHubRepo + "/main/version.json?t=" + DateTimeOffset.UtcNow.ToUnixTimeSeconds(), ghToken, out rawCode);
                 if (!string.IsNullOrEmpty(verJson) && rawCode >= 200 && rawCode < 300) {
                     var v = ser.Deserialize<Dictionary<string, object>>(verJson);
                     string ver = v.ContainsKey("version") && v["version"] != null ? v["version"].ToString().TrimStart('v', 'V') : "";
@@ -749,11 +750,21 @@ namespace LedgerFlowHost {
         }
 
         static string ForwardAiHttpPost(string jsonBody) {
-            var ser = new JavaScriptSerializer { MaxJsonLength = 32 * 1024 * 1024 };
+            var ser = new JavaScriptSerializer { MaxJsonLength = 128 * 1024 * 1024 };
             try {
                 var reqMap = ser.Deserialize<Dictionary<string, object>>(jsonBody);
                 string url = reqMap != null && reqMap.ContainsKey("url") && reqMap["url"] != null ? reqMap["url"].ToString() : "";
+                string method = reqMap != null && reqMap.ContainsKey("method") && reqMap["method"] != null ? reqMap["method"].ToString().ToUpperInvariant() : "POST";
+                if (method != "GET" && method != "POST" && method != "DELETE") method = "POST";
                 string payload = reqMap != null && reqMap.ContainsKey("body") && reqMap["body"] != null ? reqMap["body"].ToString() : "";
+                string rawBase64 = reqMap != null && reqMap.ContainsKey("rawBase64") && reqMap["rawBase64"] != null ? reqMap["rawBase64"].ToString() : "";
+                int timeoutMs = 240000;
+                if (reqMap != null && reqMap.ContainsKey("timeoutMs") && reqMap["timeoutMs"] != null) {
+                    int parsedTo;
+                    if (int.TryParse(reqMap["timeoutMs"].ToString(), out parsedTo)) {
+                        timeoutMs = Math.Max(10000, Math.Min(300000, parsedTo));
+                    }
+                }
                 Uri parsed;
                 if (!Uri.TryCreate(url, UriKind.Absolute, out parsed) || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)) {
                     return ser.Serialize(new Dictionary<string, object> { { "ok", false }, { "status", 0 }, { "error", "Only HTTP/HTTPS URLs are allowed." } });
@@ -761,9 +772,9 @@ namespace LedgerFlowHost {
 
                 ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls;
                 var hreq = (HttpWebRequest)WebRequest.Create(parsed);
-                hreq.Method = "POST";
-                hreq.Timeout = 45000;
-                hreq.ReadWriteTimeout = 45000;
+                hreq.Method = method;
+                hreq.Timeout = timeoutMs;
+                hreq.ReadWriteTimeout = timeoutMs;
                 hreq.ContentType = "application/json; charset=utf-8";
 
                 if (reqMap.ContainsKey("headers") && reqMap["headers"] is Dictionary<string, object>) {
@@ -775,10 +786,12 @@ namespace LedgerFlowHost {
                     }
                 }
 
-                byte[] postBytes = Encoding.UTF8.GetBytes(payload);
-                hreq.ContentLength = postBytes.Length;
-                using (var reqStream = hreq.GetRequestStream()) {
-                    reqStream.Write(postBytes, 0, postBytes.Length);
+                if (method == "POST") {
+                    byte[] postBytes = !string.IsNullOrEmpty(rawBase64) ? Convert.FromBase64String(rawBase64) : Encoding.UTF8.GetBytes(payload);
+                    hreq.ContentLength = postBytes.Length;
+                    using (var reqStream = hreq.GetRequestStream()) {
+                        reqStream.Write(postBytes, 0, postBytes.Length);
+                    }
                 }
 
                 try {
