@@ -1566,10 +1566,9 @@ public final class StatementParser {
     private static ParseResult parsePdfBytes(byte[] bytes, String password, ParseJobState job) {
         ParseResult res = new ParseResult();
         try {
-            updateJobProgress(job, "indexing", "Indexing PDF objects...", 0, 0, 5, 0, null);
-            String pdfStr = new String(bytes, StandardCharsets.ISO_8859_1);
-            Map<Integer, PdfIndirectObj> objs = parsePdfObjects(bytes, pdfStr);
-            Object[] secAttempt = tryUnlockPdfSecurity(pdfStr, objs, password);
+            updateJobProgress(job, "indexing", "Scanning PDF byte structure (0%)...", 0, 0, 2, 0, null);
+            Map<Integer, PdfIndirectObj> objs = parsePdfObjectsFast(bytes, job);
+            Object[] secAttempt = tryUnlockPdfSecurityFast(bytes, objs, password);
             if (secAttempt[0] != null) {
                 return (ParseResult) secAttempt[0];
             }
@@ -1608,12 +1607,11 @@ public final class StatementParser {
                         }
                     }
                 }
-                if (job != null && totalObjs > 0 && (oi % 100 == 0 || oi == totalObjs - 1)) {
-                    int decPct = 6 + (int) (10.0 * (oi + 1) / totalObjs);
-                    updateJobProgress(job, "decoding", "Decoding PDF streams & fonts...", 0, 0, decPct, -1, null);
+                if (job != null && totalObjs > 0 && (oi % 150 == 0 || oi == totalObjs - 1)) {
+                    int decPct = 14 + (int) (12.0 * (oi + 1) / totalObjs);
+                    updateJobProgress(job, "decoding", "Decoding PDF streams & fonts (" + (oi + 1) + "/" + totalObjs + ")...", 0, 0, decPct, -1, null);
                 }
             }
-            pdfStr = null;
 
             List<PdfIndirectObj> pageObjs = new ArrayList<PdfIndirectObj>();
             List<Integer> pageOrderIds = resolvePdfPageOrder(objs);
@@ -1641,7 +1639,7 @@ public final class StatementParser {
             int runningTxHits = 0;
 
             if (!pageObjs.isEmpty()) {
-                updateJobProgress(job, "reading", "Reading page 1 of " + totalPages + "...", 0, totalPages, 16, 0, null);
+                updateJobProgress(job, "reading", "Reading page 1 of " + totalPages + "...", 0, totalPages, 26, 0, null);
                 List<PdfTextFrag> pageFrags = new ArrayList<PdfTextFrag>(256);
                 List<String> batchSnippets = new ArrayList<String>();
                 int[] hitsOut = new int[1];
@@ -1690,8 +1688,8 @@ public final class StatementParser {
                             }
                         }
                     }
-                    if (job != null && (pageNum == 1 || pageNum == totalPages || pageNum % 2 == 0)) {
-                        int pct = 16 + (int) (70.0 * pageNum / Math.max(1, totalPages));
+                    if (job != null && (pageNum == 1 || pageNum == totalPages || pageNum % 3 == 0)) {
+                        int pct = 26 + (int) (62.0 * pageNum / Math.max(1, totalPages));
                         updateJobProgress(job, "reading", "Reading page " + pageNum + " of " + totalPages + "...", pageNum, totalPages, pct, runningTxHits, batchSnippets);
                         batchSnippets.clear();
                     }
@@ -1740,90 +1738,217 @@ public final class StatementParser {
         }
     }
 
-    private static Map<Integer, PdfIndirectObj> parsePdfObjects(byte[] rawBytes, String pdfStr) {
-        Map<Integer, PdfIndirectObj> map = new HashMap<Integer, PdfIndirectObj>();
-        Matcher m = Pattern.compile("(?:^|[\\r\\n\\s])(\\d+)\\s+(\\d+)\\s+obj\\b").matcher(pdfStr);
-        List<Integer> ids = new ArrayList<Integer>();
-        List<Integer> gens = new ArrayList<Integer>();
-        List<Integer> starts = new ArrayList<Integer>();
-        List<Integer> bodyStarts = new ArrayList<Integer>();
-        while (m.find()) {
-            try {
-                ids.add(Integer.parseInt(m.group(1)));
-                gens.add(Integer.parseInt(m.group(2)));
-                starts.add(m.start());
-                bodyStarts.add(m.end());
-            } catch (NumberFormatException ignored) {}
-        }
+    private static boolean isPdfWs(int b) {
+        return b == ' ' || b == '\t' || b == '\r' || b == '\n' || b == '\f' || b == 0;
+    }
 
-        for (int idx = 0; idx < ids.size(); idx++) {
-            int id = ids.get(idx);
-            int gen = gens.get(idx);
-            int bodyStart = bodyStarts.get(idx);
-            int searchEnd = (idx + 1 < starts.size()) ? starts.get(idx + 1) : pdfStr.length();
-            if (bodyStart >= searchEnd) continue;
+    private static boolean isPdfBoundaryOrDelim(int b) {
+        return b <= 32 || b == '<' || b == '>' || b == '/' || b == '[' || b == ']' || b == '(' || b == ')' || b == '%';
+    }
+
+    private static int findBytesAscii(byte[] hay, int start, int limit, String needle) {
+        int nLen = needle.length();
+        int end = Math.min(limit, hay.length) - nLen;
+        if (start < 0 || end < start || nLen == 0) return -1;
+        byte first = (byte) needle.charAt(0);
+        for (int i = start; i <= end; i++) {
+            if (hay[i] != first) continue;
+            boolean ok = true;
+            for (int j = 1; j < nLen; j++) {
+                if (hay[i + j] != (byte) needle.charAt(j)) { ok = false; break; }
+            }
+            if (ok) return i;
+        }
+        return -1;
+    }
+
+    private static int extractDirectLengthFromDict(String dict) {
+        if (dict == null || dict.isEmpty()) return -1;
+        int idx = 0;
+        while ((idx = dict.indexOf("/Length", idx)) >= 0) {
+            int p = idx + 7;
+            if (p < dict.length() && dict.charAt(p) >= 'A' && dict.charAt(p) <= 'z') { idx = p; continue; }
+            while (p < dict.length() && dict.charAt(p) <= ' ') p++;
+            int numStart = p;
+            while (p < dict.length() && dict.charAt(p) >= '0' && dict.charAt(p) <= '9') p++;
+            if (p > numStart) {
+                int afterNum = p;
+                while (afterNum < dict.length() && dict.charAt(afterNum) <= ' ') afterNum++;
+                int gStart = afterNum;
+                while (afterNum < dict.length() && dict.charAt(afterNum) >= '0' && dict.charAt(afterNum) <= '9') afterNum++;
+                if (afterNum > gStart) {
+                    while (afterNum < dict.length() && dict.charAt(afterNum) <= ' ') afterNum++;
+                    if (afterNum < dict.length() && dict.charAt(afterNum) == 'R') {
+                        idx = p;
+                        continue;
+                    }
+                }
+                try { return Integer.parseInt(dict.substring(numStart, p)); } catch (Exception ignored) {}
+            }
+            idx = p;
+        }
+        return -1;
+    }
+
+    private static Map<Integer, PdfIndirectObj> parsePdfObjectsFast(byte[] rawBytes, ParseJobState job) {
+        Map<Integer, PdfIndirectObj> map = new HashMap<Integer, PdfIndirectObj>();
+        int n = rawBytes.length;
+        int pos = 0;
+        int nextReportPos = 512 * 1024;
+
+        while (pos < n) {
+            if (job != null && pos >= nextReportPos) {
+                int pct = 2 + (int) (11.0 * pos / Math.max(1, n));
+                updateJobProgress(job, "indexing",
+                        String.format(Locale.US, "Indexing PDF (%.1f / %.1f MB, %d objects)...", pos / 1048576.0, n / 1048576.0, map.size()),
+                        0, 0, pct, -1, null);
+                nextReportPos += 512 * 1024;
+            }
+
+            int b = rawBytes[pos] & 0xFF;
+            if (b < '0' || b > '9' || (pos > 0 && !isPdfWs(rawBytes[pos - 1] & 0xFF))) {
+                pos++;
+                continue;
+            }
+
+            int p = pos;
+            long idVal = 0;
+            int idDigits = 0;
+            while (p < n && rawBytes[p] >= '0' && rawBytes[p] <= '9') {
+                if (idDigits < 9) idVal = idVal * 10 + (rawBytes[p] - '0');
+                idDigits++;
+                p++;
+            }
+            if (idDigits == 0 || idDigits > 9 || p >= n || !isPdfWs(rawBytes[p] & 0xFF)) {
+                pos++;
+                continue;
+            }
+            while (p < n && isPdfWs(rawBytes[p] & 0xFF)) p++;
+
+            long genVal = 0;
+            int genDigits = 0;
+            while (p < n && rawBytes[p] >= '0' && rawBytes[p] <= '9') {
+                if (genDigits < 5) genVal = genVal * 10 + (rawBytes[p] - '0');
+                genDigits++;
+                p++;
+            }
+            if (genDigits == 0 || genDigits > 5 || p >= n || !isPdfWs(rawBytes[p] & 0xFF)) {
+                pos++;
+                continue;
+            }
+            while (p < n && isPdfWs(rawBytes[p] & 0xFF)) p++;
+
+            if (p + 3 > n || rawBytes[p] != 'o' || rawBytes[p + 1] != 'b' || rawBytes[p + 2] != 'j'
+                    || (p + 3 < n && !isPdfBoundaryOrDelim(rawBytes[p + 3] & 0xFF))) {
+                pos++;
+                continue;
+            }
+
+            int id = (int) idVal;
+            int gen = (int) genVal;
+            int bodyStart = p + 3;
 
             String dict = "";
             int dictStart = -1;
             int dictEnd = -1;
-            int scanLim = Math.min(searchEnd, bodyStart + 4096);
+            int scanLim = Math.min(n, bodyStart + 4096);
             for (int i = bodyStart; i < scanLim - 1; i++) {
-                char c = pdfStr.charAt(i);
-                if (c == '<' && pdfStr.charAt(i + 1) == '<') { dictStart = i; break; }
-                if (c == 's' && i + 6 <= scanLim && "stream".equals(pdfStr.substring(i, i + 6))) break;
+                int c = rawBytes[i] & 0xFF;
+                if (c <= 32) continue;
+                if (c == '<') {
+                    if (rawBytes[i + 1] == '<') { dictStart = i; break; }
+                    break;
+                }
+                if (c == 's' && i + 6 <= scanLim && rawBytes[i + 1] == 't' && rawBytes[i + 2] == 'r'
+                        && rawBytes[i + 3] == 'e' && rawBytes[i + 4] == 'a' && rawBytes[i + 5] == 'm') {
+                    break;
+                }
+                if (c == 'e' && i + 6 <= scanLim && rawBytes[i + 1] == 'n' && rawBytes[i + 2] == 'd'
+                        && rawBytes[i + 3] == 'o' && rawBytes[i + 4] == 'b' && rawBytes[i + 5] == 'j') {
+                    break;
+                }
+                if (c == '%') {
+                    while (i < scanLim && rawBytes[i] != '\n' && rawBytes[i] != '\r') i++;
+                    continue;
+                }
+                break;
             }
+
             if (dictStart >= 0) {
                 int depth = 0;
-                for (int i = dictStart; i < searchEnd - 1; i++) {
-                    if (pdfStr.charAt(i) == '<' && pdfStr.charAt(i + 1) == '<') { depth++; i++; }
-                    else if (pdfStr.charAt(i) == '>' && pdfStr.charAt(i + 1) == '>') {
+                int dictMax = Math.min(n - 1, dictStart + 65536);
+                boolean inLit = false;
+                int litParen = 0;
+                for (int i = dictStart; i < dictMax; i++) {
+                    int c = rawBytes[i] & 0xFF;
+                    if (inLit) {
+                        if (c == '\\') { i++; continue; }
+                        if (c == '(') litParen++;
+                        else if (c == ')') { litParen--; if (litParen <= 0) inLit = false; }
+                        continue;
+                    }
+                    if (c == '(') { inLit = true; litParen = 1; continue; }
+                    if (c == '<' && rawBytes[i + 1] == '<') { depth++; i++; }
+                    else if (c == '>' && rawBytes[i + 1] == '>') {
                         depth--; i++;
                         if (depth == 0) { dictEnd = i + 1; break; }
                     }
                 }
                 if (dictEnd > dictStart) {
-                    dict = pdfStr.substring(dictStart, dictEnd);
+                    dict = new String(rawBytes, dictStart, dictEnd - dictStart, StandardCharsets.ISO_8859_1);
                 }
             }
+
+            int afterDict = dictEnd > 0 ? dictEnd : bodyStart;
+            int probe = afterDict;
+            while (probe < n && isPdfWs(rawBytes[probe] & 0xFF)) probe++;
 
             byte[] streamBytes = null;
             String rawBody = "";
-            int afterDict = dictEnd > 0 ? dictEnd : bodyStart;
-            int endObjPos = pdfStr.indexOf("endobj", afterDict);
-            if (endObjPos < 0 || endObjPos > searchEnd) endObjPos = searchEnd;
+            boolean isStream = probe + 6 <= n
+                    && rawBytes[probe] == 's' && rawBytes[probe + 1] == 't' && rawBytes[probe + 2] == 'r'
+                    && rawBytes[probe + 3] == 'e' && rawBytes[probe + 4] == 'a' && rawBytes[probe + 5] == 'm'
+                    && (probe + 6 == n || isPdfWs(rawBytes[probe + 6] & 0xFF));
 
-            Matcher lenPatM = Pattern.compile("/Length\\s+(\\d+)\\b").matcher(dict == null ? "" : dict);
-            int declLen = -1;
-            if (lenPatM.find()) {
-                try { declLen = Integer.parseInt(lenPatM.group(1)); } catch (Exception ignored) { declLen = -1; }
-            }
+            if (isStream) {
+                int sDataStart = probe + 6;
+                if (sDataStart < n && rawBytes[sDataStart] == '\r') sDataStart++;
+                if (sDataStart < n && rawBytes[sDataStart] == '\n') sDataStart++;
 
-            int streamKw = pdfStr.indexOf("stream", afterDict);
-            if (streamKw >= 0 && streamKw < searchEnd && (streamKw < endObjPos || declLen > 0)) {
-                int sDataStart = streamKw + 6;
-                if (sDataStart < pdfStr.length() && pdfStr.charAt(sDataStart) == '\r') sDataStart++;
-                if (sDataStart < pdfStr.length() && pdfStr.charAt(sDataStart) == '\n') sDataStart++;
-                if (declLen > 0 && sDataStart + declLen <= rawBytes.length) {
-                    int probeEnd = Math.min(pdfStr.length(), sDataStart + declLen + 16);
-                    String tail = pdfStr.substring(sDataStart + declLen, probeEnd).trim();
-                    if (tail.startsWith("endstream")) {
-                        streamBytes = Arrays.copyOfRange(rawBytes, sDataStart, sDataStart + declLen);
+                int declLen = extractDirectLengthFromDict(dict);
+                if (declLen >= 0 && sDataStart + declLen <= n) {
+                    int chk = sDataStart + declLen;
+                    while (chk < n && isPdfWs(rawBytes[chk] & 0xFF)) chk++;
+                    if (chk + 9 <= n && findBytesAscii(rawBytes, chk, chk + 9, "endstream") == chk) {
+                        if (declLen > 0) {
+                            streamBytes = Arrays.copyOfRange(rawBytes, sDataStart, sDataStart + declLen);
+                        }
+                        pos = chk + 9;
                     }
                 }
-                if (streamBytes == null) {
-                    int limEnd = Math.max(sDataStart, endObjPos);
-                    int endStreamKw = pdfStr.lastIndexOf("endstream", limEnd);
+                if (pos <= probe) {
+                    int endStreamKw = findBytesAscii(rawBytes, sDataStart, n, "endstream");
                     if (endStreamKw >= sDataStart) {
                         int sLen = endStreamKw - sDataStart;
                         if (sLen > 0 && rawBytes[sDataStart + sLen - 1] == '\n') sLen--;
                         if (sLen > 0 && rawBytes[sDataStart + sLen - 1] == '\r') sLen--;
-                        if (sLen > 0 && sDataStart + sLen <= rawBytes.length) {
+                        if (sLen > 0) {
                             streamBytes = Arrays.copyOfRange(rawBytes, sDataStart, sDataStart + sLen);
                         }
+                        pos = endStreamKw + 9;
+                    } else {
+                        pos = sDataStart;
                     }
                 }
-            } else if ((dict == null || dict.isEmpty()) && endObjPos > bodyStart) {
-                rawBody = pdfStr.substring(bodyStart, endObjPos).trim();
+                int eoAfter = findBytesAscii(rawBytes, pos, Math.min(n, pos + 128), "endobj");
+                if (eoAfter >= pos) pos = eoAfter + 6;
+            } else {
+                int endObjPos = findBytesAscii(rawBytes, afterDict, Math.min(n, afterDict + 65536), "endobj");
+                if (endObjPos < 0) endObjPos = Math.min(n, afterDict + 4096);
+                if (dict.isEmpty() && endObjPos > bodyStart) {
+                    rawBody = new String(rawBytes, bodyStart, endObjPos - bodyStart, StandardCharsets.ISO_8859_1).trim();
+                }
+                pos = Math.max(bodyStart, endObjPos + 6);
             }
 
             PdfIndirectObj obj = new PdfIndirectObj();
@@ -1834,7 +1959,31 @@ public final class StatementParser {
             obj.rawStream = streamBytes;
             map.put(id, obj);
         }
+        if (job != null) {
+            updateJobProgress(job, "indexing", "Indexed " + map.size() + " PDF object(s).", 0, 0, 14, -1, null);
+        }
         return map;
+    }
+
+    private static Object[] tryUnlockPdfSecurityFast(byte[] rawBytes, Map<Integer, PdfIndirectObj> objs, String password) {
+        int tailLen = Math.min(rawBytes.length, 196 * 1024);
+        String tailStr = new String(rawBytes, rawBytes.length - tailLen, tailLen, StandardCharsets.ISO_8859_1);
+        String probeStr = tailStr;
+        if (!probeStr.contains("/Encrypt")) {
+            int headLen = Math.min(rawBytes.length, 64 * 1024);
+            String headStr = new String(rawBytes, 0, headLen, StandardCharsets.ISO_8859_1);
+            if (headStr.contains("/Encrypt")) {
+                probeStr = headStr + "\n" + tailStr;
+            } else {
+                for (PdfIndirectObj o : objs.values()) {
+                    if (o.dict != null && o.dict.contains("/Encrypt")) {
+                        probeStr = o.dict + "\n" + tailStr;
+                        break;
+                    }
+                }
+            }
+        }
+        return tryUnlockPdfSecurity(probeStr, objs, password);
     }
 
     private static byte[] decodePdfStream(byte[] raw, String dict) {

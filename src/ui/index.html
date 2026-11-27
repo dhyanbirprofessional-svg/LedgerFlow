@@ -86,23 +86,30 @@
       </div>
 
       <nav class="nav-list" id="nav-list">
+        <div class="nav-section-label">Core</div>
         <button class="nav-item active" data-view="overview">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>
           <span>Overview</span>
         </button>
         <button class="nav-item" data-view="ledgers">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="12" y1="6" x2="12" y2="14"/><line x1="8" y1="10" x2="16" y2="10"/></svg>
-          <span>Bank &amp; Party Ledgers</span>
+          <span>Ledgers</span>
           <span class="nav-pill" id="nav-ledger-count">1</span>
-        </button>
-        <button class="nav-item" data-view="monthly">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
-          <span>Monthly Intelligence</span>
         </button>
         <button class="nav-item" data-view="transactions">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
           <span>Transactions</span>
           <span class="nav-pill" id="nav-tx-count">0</span>
+        </button>
+        <button class="nav-item" data-view="monthly">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+          <span>Monthly Summary</span>
+        </button>
+
+        <div class="nav-section-label">Planning</div>
+        <button class="nav-item" data-view="accounts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          <span>Accounts &amp; Cards</span>
         </button>
         <button class="nav-item" data-view="budgets">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6 3"/></svg>
@@ -110,28 +117,26 @@
         </button>
         <button class="nav-item" data-view="recurring">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-          <span>Subscriptions & Bills</span>
+          <span>Recurring Bills</span>
           <span class="nav-badge hidden" id="nav-due-count">0</span>
-        </button>
-        <button class="nav-item" data-view="accounts">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-          <span>Accounts & Cards</span>
         </button>
         <button class="nav-item" data-view="goals">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-          <span>Goals & Split IOUs</span>
+          <span>Goals &amp; IOUs</span>
+        </button>
+
+        <div class="nav-section-label">Intelligence</div>
+        <button class="nav-item" data-view="ai">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
+          <span>LedgerFlow AI</span>
         </button>
         <button class="nav-item" data-view="analytics">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 9l-5 5-4-4-3 3"/></svg>
-          <span>Analytics & Tax</span>
+          <span>Analytics &amp; Tax</span>
         </button>
         <button class="nav-item" data-view="rules">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           <span>Smart Rules</span>
-        </button>
-        <button class="nav-item" data-view="ai">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
-          <span>AI Intelligence</span>
         </button>
       </nav>
 
@@ -584,17 +589,30 @@
 
   <!-- PDF / AI Reading & Analysis Live Progress Dialog -->
   <div id="pdf-progress-modal" class="modal-backdrop hidden" style="z-index:1200;">
-    <div class="modal" style="max-width:520px;text-align:center;padding:24px 22px;">
-      <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
-        <div class="lf-progress-spinner" style="margin:0;width:32px;height:32px;flex-shrink:0;" aria-hidden="true"></div>
-        <div style="text-align:left;min-width:0;flex:1;">
-          <h3 id="pdf-progress-title" style="margin:0 0 2px;font-size:16.5px;">Reading PDF Statement...</h3>
-          <p id="pdf-progress-sub" class="muted text-xs" style="margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Preparing file...</p>
+    <div class="modal" style="max-width:540px;text-align:center;padding:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0;flex:1;">
+          <div class="lf-progress-spinner" style="margin:0;width:34px;height:34px;flex-shrink:0;" aria-hidden="true"></div>
+          <div style="text-align:left;min-width:0;flex:1;">
+            <h3 id="pdf-progress-title" style="margin:0 0 2px;font-size:16.5px;">Reading PDF Statement...</h3>
+            <p id="pdf-progress-sub" class="muted text-xs" style="margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Preparing file...</p>
+          </div>
         </div>
-        <span id="pdf-progress-pct" class="badge" style="font-weight:700;min-width:44px;text-align:center;">0%</span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;">
+          <span id="pdf-progress-pct" class="badge" style="font-weight:700;min-width:48px;text-align:center;background:var(--primary-soft);color:var(--primary);">0%</span>
+          <span id="pdf-progress-elapsed" class="text-xs muted" style="font-variant-numeric:tabular-nums;">0.0s</span>
+        </div>
       </div>
-      <div class="lf-progress-track" style="margin-top:14px;">
-        <div id="pdf-progress-fill" class="lf-progress-fill" style="width:6%;"></div>
+
+      <div id="pdf-progress-phases" class="lf-phase-steps" style="margin-top:14px;">
+        <div class="lf-phase-step active" data-phase-step="indexing"><span>1. Index</span></div>
+        <div class="lf-phase-step" data-phase-step="decoding"><span>2. Decode</span></div>
+        <div class="lf-phase-step" data-phase-step="reading"><span>3. Read Pages</span></div>
+        <div class="lf-phase-step" data-phase-step="building"><span>4. Align</span></div>
+      </div>
+
+      <div class="lf-progress-track" style="margin-top:12px;">
+        <div id="pdf-progress-fill" class="lf-progress-fill" style="width:4%;"></div>
       </div>
       <div id="pdf-progress-stats" class="text-xs muted" style="margin-top:8px;font-weight:600;">Starting...</div>
       <div id="pdf-progress-feed" class="lf-progress-feed hidden"></div>

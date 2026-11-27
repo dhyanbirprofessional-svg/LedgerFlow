@@ -41,7 +41,7 @@
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const API_TOKEN = URL_PARAMS.get("token") || "";
   const IS_PREVIEW_PARAM = URL_PARAMS.get("preview") === "1";
-  const APP_VERSION = "1.0.6";
+  const APP_VERSION = "1.0.7";
   const GITHUB_REPO = "dhyanbirprofessional-svg/LedgerFlow";
 
   let isDesktopHost = false;
@@ -175,14 +175,46 @@
     return new Promise((r) => setTimeout(r, 0));
   }
 
+  let pdfProgressTimer = null;
+  let pdfProgressStartedAt = 0;
+
+  function updatePdfProgressPhases(activePhase) {
+    const order = ["indexing", "decoding", "reading", "building"];
+    const phaseMap = {
+      starting: 0, queued: 0, indexing: 0,
+      decoding: 1,
+      reading: 2,
+      building: 3, align: 3, done: 4
+    };
+    const activeIdx = Object.prototype.hasOwnProperty.call(phaseMap, activePhase) ? phaseMap[activePhase] : -1;
+    const container = document.getElementById("pdf-progress-phases");
+    if (!container) return;
+    container.classList.toggle("hidden", activeIdx < 0);
+    if (activeIdx < 0) return;
+    container.querySelectorAll("[data-phase-step]").forEach((el) => {
+      const idx = order.indexOf(el.dataset.phaseStep);
+      el.classList.toggle("done", idx >= 0 && idx < activeIdx);
+      el.classList.toggle("active", idx === activeIdx);
+    });
+  }
+
   function showPdfProgress(title = "Reading PDF Statement...", sub = "Preparing file...", opts = {}) {
     const modal = document.getElementById("pdf-progress-modal");
     if (!modal) return;
     const tEl = document.getElementById("pdf-progress-title");
     const sEl = document.getElementById("pdf-progress-sub");
+    const elEl = document.getElementById("pdf-progress-elapsed");
     if (tEl) tEl.textContent = title;
     if (sEl) sEl.textContent = sub;
+    if (pdfProgressTimer) { clearInterval(pdfProgressTimer); pdfProgressTimer = null; }
+    pdfProgressStartedAt = Date.now();
+    if (elEl) elEl.textContent = "0.0s";
+    pdfProgressTimer = setInterval(() => {
+      const e = document.getElementById("pdf-progress-elapsed");
+      if (e) e.textContent = ((Date.now() - pdfProgressStartedAt) / 1000).toFixed(1) + "s";
+    }, 200);
     updatePdfProgress({
+      phase: opts.phase || (/pdf/i.test(title) ? "indexing" : ""),
       percent: typeof opts.percent === "number" ? opts.percent : 6,
       stats: opts.stats || "Starting...",
       feed: Array.isArray(opts.feed) ? opts.feed : []
@@ -201,6 +233,7 @@
     const nextTitle = title !== null ? title : opts.title;
     if (nextTitle !== undefined && nextTitle !== null && tEl) tEl.textContent = nextTitle;
     if (opts.sub !== undefined && opts.sub !== null && sEl) sEl.textContent = opts.sub;
+    if (opts.phase !== undefined) updatePdfProgressPhases(opts.phase);
     if (typeof opts.percent === "number") {
       const p = Math.max(0, Math.min(100, Math.round(opts.percent)));
       if (pctEl) pctEl.textContent = p + "%";
@@ -222,6 +255,7 @@
   }
 
   function hidePdfProgress() {
+    if (pdfProgressTimer) { clearInterval(pdfProgressTimer); pdfProgressTimer = null; }
     const modal = document.getElementById("pdf-progress-modal");
     if (modal) modal.classList.add("hidden");
   }
@@ -3292,6 +3326,30 @@
       return `Total Credits: ${fmtMoney(a.totalIn)} across ${incTxs.length} entries.\nTop inflow sources:\n${topInc.join("\n")}`;
     }
 
+    // 4.5 Account balances & Party Ledgers
+    if (/(account|bank\s*balance|card|wallet|cash\s*in\s*hand)/i.test(ql) && (state.accounts || []).length) {
+      const accLines = (state.accounts || []).map((acc) => {
+        const bal = typeof getAccountBalance === "function" ? getAccountBalance(acc.id) : (acc.initialBalance || 0);
+        return `• ${acc.name} (${acc.type || "bank"}): ${fmtMoney(bal)}`;
+      });
+      return `Your Accounts (${accLines.length}):\n${accLines.join("\n")}\nTotal Liquid Balance: ${fmtMoney(a.liquidBalance)}`;
+    }
+    if (/(ledger|owe|owing|lent|borrow|party|receivable|payable)/i.test(ql) && (state.ledgers || []).length) {
+      const lMap = {};
+      for (const t of state.transactions || []) {
+        if (!t.ledgerId) continue;
+        lMap[t.ledgerId] = (lMap[t.ledgerId] || 0) + (t.type === "income" ? txBaseAmount(t) : -txBaseAmount(t));
+      }
+      const nonZero = (state.ledgers || [])
+        .map((l) => ({ name: l.name, net: lMap[l.id] || 0 }))
+        .filter((x) => Math.abs(x.net) > 0.01)
+        .sort((x, y) => Math.abs(y.net) - Math.abs(x.net))
+        .slice(0, 8);
+      if (nonZero.length) {
+        return `Party / Ledger Balances:\n${nonZero.map((x) => `• ${x.name}: ${fmtMoney(x.net)}`).join("\n")}`;
+      }
+    }
+
     // 5. Savings / Advice / Balance
     if (/(save|saving|budget|advice|plan|balance|net worth)/i.test(ql)) {
       const top3 = a.topCats.slice(0, 3).map((c) => `${c.name} (${fmtMoney(c.total)})`).join(", ");
@@ -3325,12 +3383,130 @@
     return `Spending Breakdown (${a.txCount} entries):\n• ${curM ? `Latest Month (${curM.month}): In ${fmtMoney(curM.in)} / Out ${fmtMoney(curM.out)}` : ""}\n• All-Time: In ${fmtMoney(a.totalIn)} | Out ${fmtMoney(a.totalOut)} | Savings Rate: ${a.savingsRate}%\n\nTop Categories:\n${catLines.join("\n")}`;
   }
 
+  function buildAiChatFinancialContext(question) {
+    const a = analyzeFinancesLocally();
+    const ql = String(question || "").toLowerCase();
+    const stopWords = new Set(["how", "much", "did", "spend", "spent", "what", "when", "where", "who", "why", "can", "could", "should", "the", "for", "this", "last", "month", "year", "with", "from", "about", "all", "total", "give", "show", "tell", "list", "analyze"]);
+    const qTokens = ql.replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length >= 2 && !stopWords.has(w));
+
+    const txs = state.transactions || [];
+    const matched = [];
+    if (qTokens.length) {
+      for (let i = 0; i < txs.length && matched.length < 35; i++) {
+        const t = txs[i];
+        const hay = `${t.date || ""} ${t.payee || ""} ${getCat(t.category).name} ${t.notes || ""} ${t.rawNarration || ""}`.toLowerCase();
+        if (qTokens.some((tok) => hay.includes(tok))) {
+          matched.push({
+            date: String(t.date || "").slice(0, 10),
+            type: t.type,
+            amt: txBaseAmount(t),
+            payee: t.payee,
+            cat: getCat(t.category).name,
+            note: String(t.notes || "").slice(0, 60)
+          });
+        }
+      }
+    }
+    const recent = txs.slice(0, 20).map((t) => ({
+      date: String(t.date || "").slice(0, 10),
+      type: t.type,
+      amt: txBaseAmount(t),
+      payee: t.payee,
+      cat: getCat(t.category).name
+    }));
+    const accs = (state.accounts || []).map((acc) => ({
+      name: acc.name,
+      type: acc.type,
+      balance: getAccountBalance(acc.id)
+    }));
+    const partyBalances = {};
+    for (const t of txs) {
+      if (t.ledgerId) partyBalances[t.ledgerId] = (partyBalances[t.ledgerId] || 0) + (t.type === "income" ? txBaseAmount(t) : -txBaseAmount(t));
+    }
+    const topLedgers = (state.ledgers || [])
+      .map((l) => ({ name: l.name, type: l.type, net: Math.round((partyBalances[l.id] || 0) * 100) / 100 }))
+      .filter((l) => Math.abs(l.net) > 0.01)
+      .sort((x, y) => Math.abs(y.net) - Math.abs(x.net))
+      .slice(0, 12);
+
+    return {
+      currency: state.settings?.currency || "INR",
+      today: todayISO(),
+      totals: { txCount: a.txCount, totalIn: Math.round(a.totalIn), totalOut: Math.round(a.totalOut), net: Math.round(a.net), savingsRatePct: a.savingsRate, liquidBalance: Math.round(a.liquidBalance), netWorth: Math.round(getTotalNetWorth()) },
+      accounts: accs,
+      months: a.monthsSorted.slice(0, 12),
+      topCategories: a.topCats.slice(0, 10).map((c) => ({ name: c.name, total: Math.round(c.total) })),
+      topPayees: a.topPayees.slice(0, 15).map((p) => ({ name: p.name, total: Math.round(p.total), count: p.count })),
+      recurringCandidates: a.recurringCandidates.slice(0, 8).map((r) => ({ name: r.name, total: Math.round(r.total), count: r.count, months: r.months })),
+      partyLedgers: topLedgers,
+      budgets: (state.budgets || []).map((b) => ({ cat: getCat(b.category).name, limit: b.amount })),
+      matchedTransactions: matched,
+      recentTransactions: matched.length >= 15 ? [] : recent
+    };
+  }
+
   async function askLedgerFlowAI(question) {
     const q = String(question || "").trim();
     if (!q) return { text: "", source: "Local Brain" };
+    const aiCfg = state.settings?.aiConfig || {};
+    const prov = aiCfg.provider || "none";
+    const hasRemote = prov !== "none" && aiCfg.mode !== "local" && (prov === "ollama" || String(aiCfg.apiKey || "").trim().length >= 10);
+
+    if (hasRemote) {
+      try {
+        const ctx = buildAiChatFinancialContext(q);
+        const sysPrompt =
+          "You are LedgerFlow AI, an expert personal finance assistant analyzing the user's real ledger data.\n" +
+          `Primary currency: ${ctx.currency}. Today: ${ctx.today}.\n` +
+          "Answer the user's question clearly, accurately, and concisely using ONLY the supplied financial JSON data. Cite exact amounts, payees, dates, and trends. If something is missing from the data, say so clearly." +
+          (aiCfg.customPrompt ? `\nUser instructions: ${aiCfg.customPrompt}` : "");
+        const historyMsgs = aiChatHistory.slice(-6).map((m) => ({
+          role: m.role === "user" ? "user" : "model",
+          parts: [{ text: String(m.text || "").slice(0, 600) }]
+        }));
+
+        if (prov === "gemini") {
+          const contents = [
+            { role: "user", parts: [{ text: `LEDGER_SNAPSHOT_JSON:\n${JSON.stringify(ctx)}` }] },
+            { role: "model", parts: [{ text: "Understood. I have your exact ledger snapshot. Ask your question." }] },
+            ...historyMsgs,
+            { role: "user", parts: [{ text: q }] }
+          ];
+          const gRes = await callGeminiWithFallback({
+            systemInstruction: { parts: [{ text: sysPrompt }] },
+            contents,
+            generationConfig: { temperature: 0.2, maxOutputTokens: 900 }
+          }, aiCfg);
+          const ans = String(gRes.text || "").trim();
+          if (ans) return { text: ans, source: `Google Gemini (${gRes.model})` };
+        } else {
+          const base = (aiCfg.endpoint || (prov === "ollama" ? "http://localhost:11434/v1" : "https://api.openai.com/v1")).replace(/\/+$/, "");
+          const model = aiCfg.model || (prov === "ollama" ? "llama3.2" : "gpt-4o-mini");
+          const headers = {};
+          if (aiCfg.apiKey) headers.Authorization = `Bearer ${aiCfg.apiKey.trim()}`;
+          const oRes = await aiNativePost(`${base}/chat/completions`, headers, {
+            model,
+            temperature: 0.2,
+            messages: [
+              { role: "system", content: sysPrompt },
+              { role: "user", content: `LEDGER_SNAPSHOT_JSON:\n${JSON.stringify(ctx)}\n\nQuestion: ${q}` }
+            ]
+          });
+          const ans = String(oRes?.choices?.[0]?.message?.content || "").trim();
+          if (ans) return { text: ans, source: `${prov.toUpperCase()} (${model})` };
+        }
+      } catch (err) {
+        const localAns = answerFinancialQueryLocally(q);
+        return {
+          text: `${localAns}\n\n[Note: Live AI fallback triggered — ${err?.message || "network/rate limit"}]`,
+          source: "Local Financial Engine (Gemini Fallback)"
+        };
+      }
+    }
+
     return {
       text: answerFinancialQueryLocally(q),
-      source: "LedgerFlow Built-in Local Brain (Offline & Instant)"
+      source: "LedgerFlow Local Brain (Connect Gemini for full conversational Q&A)"
     };
   }
 
@@ -3396,7 +3572,12 @@
   function renderAiAssistantView(root) {
     const a = analyzeFinancesLocally();
     const cfg = state.settings.aiConfig || {};
-    const engineLabel = "LedgerFlow Built-in Local Brain (Chat runs 100% locally)";
+    const geminiOn = isGeminiConnected();
+    const engineLabel = geminiOn
+      ? "Google Gemini AI + Local Financial Engine"
+      : (cfg.provider && cfg.provider !== "none" && cfg.mode !== "local"
+        ? `${cfg.provider.toUpperCase()} AI + Local Engine`
+        : "Built-in Local Brain (Connect Gemini for deep Q&A)");
 
     const topUnlabelled = Object.values(a.unlabelled.reduce((acc, t) => {
       const k = normalizePayeeKey(t.payee) || t.payee;
@@ -3415,11 +3596,11 @@
       <div class="info-banner mb-4" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
         <div>
           <strong>Active Intelligence: ${esc(engineLabel)}</strong>
-          <div class="text-xs muted mt-1">Learns from your category edits offline (${Object.keys(state.settings.aiMemory || {}).length} learned payee(s)). Google Gemini is reserved strictly for analyzing &amp; checking PDF bank statements before pushing entries.</div>
+          <div class="text-xs muted mt-1">Analyzes your accounts, ledgers, categories &amp; PDF statements (${Object.keys(state.settings.aiMemory || {}).length} learned payee(s)). ${geminiOn ? "Ask natural questions below powered by Gemini + your local vault." : "Connect your free Gemini key for full conversational Q&A & PDF verification."}</div>
         </div>
         <div class="flex-gap" style="flex-wrap:wrap;">
-          ${isGeminiConnected()
-            ? `<button class="btn btn-secondary btn-sm" id="ai-connect-gemini-btn">✓ Gemini PDF Active</button>`
+          ${geminiOn
+            ? `<button class="btn btn-secondary btn-sm" id="ai-connect-gemini-btn">✓ Gemini Connected</button>`
             : `<button class="btn btn-primary btn-sm" id="ai-connect-gemini-btn">✨ Connect Free Gemini Key</button>`}
           <button class="btn btn-secondary btn-sm" id="ai-open-importer-btn">📄 Analyze PDF Statement</button>
           <button class="btn btn-primary btn-sm" id="ai-clean-classify-btn">✨ Clean Payees &amp; Auto-Classify</button>
@@ -3659,8 +3840,8 @@
       <div class="card mt-4">
         <div class="card-header">
           <div>
-            <h3 class="card-title">✨ PDF Statement Analyzer (Built-in Brain + Free Google Gemini)</h3>
-            <p class="card-subtitle">Gemini is used only to analyze and verify PDF/bank statements before pushing entries into your ledger (not as a chatbot)</p>
+            <h3 class="card-title">✨ LedgerFlow AI &amp; PDF Analyzer (Built-in Brain + Free Google Gemini)</h3>
+            <p class="card-subtitle">Connect a free Gemini API key for smart financial Q&amp;A chat, payee cleanup, and pre-import PDF statement verification</p>
           </div>
           <span class="tag-chip">${Object.keys(state.settings.aiMemory || {}).length} learned payee(s)</span>
         </div>
@@ -7578,16 +7759,18 @@
             return;
           }
           updatePdfProgress({
+            phase: "indexing",
             sub: `Reading "${file.name}" (${sizeMb} MB) locally...`,
-            percent: 5,
-            stats: "Indexing PDF structure..."
+            percent: 3,
+            stats: "Indexing PDF objects..."
           });
           const res = await parseStatementWithLiveProgress(
             { fileName: file.name, base64: dataUrl, password: chosenPw },
             (st) => {
-              const pgTxt = st.totalPages > 0 ? `Page ${st.currentPage} / ${st.totalPages}` : "Scanning PDF...";
-              const txTxt = st.txCount > 0 ? ` • ${st.txCount} row(s) detected` : "";
+              const pgTxt = st.totalPages > 0 ? `Page ${st.currentPage} / ${st.totalPages}` : (st.phase === "decoding" ? "Decoding streams..." : "Scanning PDF bytes...");
+              const txTxt = st.txCount > 0 ? ` • ${st.txCount} row(s) found` : "";
               updatePdfProgress({
+                phase: st.phase || "indexing",
                 sub: st.stage || `Reading "${file.name}"...`,
                 percent: typeof st.percent === "number" ? st.percent : 15,
                 stats: `${pgTxt}${txTxt}`,

@@ -1302,13 +1302,12 @@ namespace LedgerFlowHost {
 
         private static ParseResult ParsePdfBytes(byte[] bytes, string password, ParseJobState job = null) {
             try {
-                UpdateJobProgress(job, "indexing", "Indexing PDF objects...", 0, 0, 5);
+                UpdateJobProgress(job, "indexing", "Scanning PDF byte structure (0%)...", 0, 0, 2);
                 Encoding latin1 = Encoding.GetEncoding("ISO-8859-1");
-                string pdfStr = latin1.GetString(bytes);
 
-                var objs = ParsePdfObjects(bytes, pdfStr);
+                var objs = ParsePdfObjectsFast(bytes, latin1, job);
                 PdfSecurityCtx secCtx = null;
-                ParseResult encErr = TryUnlockPdfSecurity(pdfStr, objs, password, out secCtx);
+                ParseResult encErr = TryUnlockPdfSecurityFast(bytes, latin1, objs, password, out secCtx);
                 if (encErr != null) return encErr;
 
                 var globalCMap = new PdfCMap();
@@ -1345,12 +1344,11 @@ namespace LedgerFlowHost {
                             }
                         }
                     }
-                    if (job != null && totalObjs > 0 && (oi % 100 == 0 || oi == totalObjs - 1)) {
-                        int decPct = 6 + (int)(10.0 * (oi + 1) / totalObjs);
-                        UpdateJobProgress(job, "decoding", "Decoding PDF streams & fonts...", 0, 0, decPct);
+                    if (job != null && totalObjs > 0 && (oi % 150 == 0 || oi == totalObjs - 1)) {
+                        int decPct = 14 + (int)(12.0 * (oi + 1) / totalObjs);
+                        UpdateJobProgress(job, "decoding", string.Format("Decoding PDF streams & fonts ({0}/{1} objects)...", oi + 1, totalObjs), 0, 0, decPct);
                     }
                 }
-                pdfStr = null;
 
                 // Collect Page objects and map their content streams & fonts
                 var pageObjs = new List<PdfIndirectObj>();
@@ -1379,7 +1377,7 @@ namespace LedgerFlowHost {
                 int runningTxHits = 0;
 
                 if (pageObjs.Count > 0) {
-                    UpdateJobProgress(job, "reading", string.Format("Reading page 1 of {0}...", totalPages), 0, totalPages, 16, 0);
+                    UpdateJobProgress(job, "reading", string.Format("Reading page 1 of {0}...", totalPages), 0, totalPages, 26, 0);
                     var pageFrags = new List<PdfTextFrag>(256);
                     var batchSnippets = new List<string>();
                     foreach (PdfIndirectObj page in pageObjs) {
@@ -1428,8 +1426,8 @@ namespace LedgerFlowHost {
                                 }
                             }
                         }
-                        if (job != null && (pageNum == 1 || pageNum == totalPages || pageNum % 2 == 0)) {
-                            int pct = 16 + (int)(70.0 * pageNum / Math.Max(1, totalPages));
+                        if (job != null && (pageNum == 1 || pageNum == totalPages || pageNum % 3 == 0)) {
+                            int pct = 26 + (int)(62.0 * pageNum / Math.Max(1, totalPages));
                             UpdateJobProgress(
                                 job,
                                 "reading",
@@ -1490,86 +1488,248 @@ namespace LedgerFlowHost {
             }
         }
 
-        private static Dictionary<int, PdfIndirectObj> ParsePdfObjects(byte[] rawBytes, string pdfStr) {
+        private static bool IsPdfWs(byte b) {
+            return b == (byte)' ' || b == (byte)'\t' || b == (byte)'\r' || b == (byte)'\n' || b == (byte)'\f' || b == 0;
+        }
+
+        private static bool IsPdfBoundaryOrDelim(byte b) {
+            return b <= 32 || b == (byte)'<' || b == (byte)'>' || b == (byte)'/' || b == (byte)'[' || b == (byte)']' || b == (byte)'(' || b == (byte)')' || b == (byte)'%';
+        }
+
+        private static int FindBytesAscii(byte[] hay, int start, int limit, string needle) {
+            int nLen = needle.Length;
+            int end = Math.Min(limit, hay.Length) - nLen;
+            if (start < 0 || end < start || nLen == 0) return -1;
+            byte first = (byte)needle[0];
+            for (int i = start; i <= end; i++) {
+                if (hay[i] != first) continue;
+                bool ok = true;
+                for (int j = 1; j < nLen; j++) {
+                    if (hay[i + j] != (byte)needle[j]) { ok = false; break; }
+                }
+                if (ok) return i;
+            }
+            return -1;
+        }
+
+        private static int ExtractDirectLengthFromDict(string dict) {
+            if (string.IsNullOrEmpty(dict)) return -1;
+            int idx = 0;
+            while ((idx = dict.IndexOf("/Length", idx, StringComparison.Ordinal)) >= 0) {
+                int p = idx + 7;
+                if (p < dict.Length && dict[p] >= 'A' && dict[p] <= 'z') { idx = p; continue; }
+                while (p < dict.Length && dict[p] <= ' ') p++;
+                int numStart = p;
+                while (p < dict.Length && dict[p] >= '0' && dict[p] <= '9') p++;
+                if (p > numStart) {
+                    int afterNum = p;
+                    while (afterNum < dict.Length && dict[afterNum] <= ' ') afterNum++;
+                    int gStart = afterNum;
+                    while (afterNum < dict.Length && dict[afterNum] >= '0' && dict[afterNum] <= '9') afterNum++;
+                    if (afterNum > gStart) {
+                        while (afterNum < dict.Length && dict[afterNum] <= ' ') afterNum++;
+                        if (afterNum < dict.Length && dict[afterNum] == 'R') {
+                            idx = p;
+                            continue; // indirect reference e.g. /Length 55 0 R
+                        }
+                    }
+                    int val;
+                    if (int.TryParse(dict.Substring(numStart, p - numStart), out val)) return val;
+                }
+                idx = p;
+            }
+            return -1;
+        }
+
+        private static Dictionary<int, PdfIndirectObj> ParsePdfObjectsFast(byte[] rawBytes, Encoding latin1, ParseJobState job) {
             var map = new Dictionary<int, PdfIndirectObj>();
-            var objStartRe = new Regex(@"(?:^|[\r\n\s])(\d+)\s+(\d+)\s+obj\b", RegexOptions.CultureInvariant);
-            var matches = objStartRe.Matches(pdfStr);
+            int n = rawBytes.Length;
+            int pos = 0;
+            int nextReportPos = 512 * 1024;
 
-            for (int m = 0; m < matches.Count; m++) {
-                int id;
-                if (!int.TryParse(matches[m].Groups[1].Value, out id)) continue;
-                int gen = 0;
-                int.TryParse(matches[m].Groups[2].Value, out gen);
-                int bodyStart = matches[m].Index + matches[m].Length;
-                int searchEnd = (m + 1 < matches.Count) ? matches[m + 1].Index : pdfStr.Length;
-                if (bodyStart >= searchEnd) continue;
+            while (pos < n) {
+                if (job != null && pos >= nextReportPos) {
+                    int pct = 2 + (int)(11.0 * pos / Math.Max(1, n));
+                    UpdateJobProgress(job, "indexing", string.Format("Indexing PDF ({0:F1} / {1:F1} MB, {2} objects)...", pos / 1048576.0, n / 1048576.0, map.Count), 0, 0, pct);
+                    nextReportPos += 512 * 1024;
+                }
 
-                // Locate dictionary << ... >> if present near start
+                byte b = rawBytes[pos];
+                if (b < (byte)'0' || b > (byte)'9' || (pos > 0 && !IsPdfWs(rawBytes[pos - 1]))) {
+                    pos++;
+                    continue;
+                }
+
+                int p = pos;
+                long idVal = 0;
+                int idDigits = 0;
+                while (p < n && rawBytes[p] >= (byte)'0' && rawBytes[p] <= (byte)'9') {
+                    if (idDigits < 9) idVal = idVal * 10 + (rawBytes[p] - (byte)'0');
+                    idDigits++;
+                    p++;
+                }
+                if (idDigits == 0 || idDigits > 9 || p >= n || !IsPdfWs(rawBytes[p])) {
+                    pos++;
+                    continue;
+                }
+                while (p < n && IsPdfWs(rawBytes[p])) p++;
+
+                long genVal = 0;
+                int genDigits = 0;
+                while (p < n && rawBytes[p] >= (byte)'0' && rawBytes[p] <= (byte)'9') {
+                    if (genDigits < 5) genVal = genVal * 10 + (rawBytes[p] - (byte)'0');
+                    genDigits++;
+                    p++;
+                }
+                if (genDigits == 0 || genDigits > 5 || p >= n || !IsPdfWs(rawBytes[p])) {
+                    pos++;
+                    continue;
+                }
+                while (p < n && IsPdfWs(rawBytes[p])) p++;
+
+                if (p + 3 > n || rawBytes[p] != (byte)'o' || rawBytes[p + 1] != (byte)'b' || rawBytes[p + 2] != (byte)'j'
+                    || (p + 3 < n && !IsPdfBoundaryOrDelim(rawBytes[p + 3]))) {
+                    pos++;
+                    continue;
+                }
+
+                int id = (int)idVal;
+                int gen = (int)genVal;
+                int bodyStart = p + 3;
+
+                // Scan for optional << ... >> dictionary
                 string dict = "";
                 int dictStart = -1;
                 int dictEnd = -1;
-                int scanLim = Math.Min(searchEnd, bodyStart + 4096);
+                int scanLim = Math.Min(n, bodyStart + 4096);
                 for (int i = bodyStart; i < scanLim - 1; i++) {
-                    char c = pdfStr[i];
-                    if (c == '<' && pdfStr[i + 1] == '<') { dictStart = i; break; }
-                    if (c == 's' && i + 6 <= scanLim && string.CompareOrdinal(pdfStr, i, "stream", 0, 6) == 0) break;
+                    byte c = rawBytes[i];
+                    if (c <= 32) continue;
+                    if (c == (byte)'<') {
+                        if (rawBytes[i + 1] == (byte)'<') { dictStart = i; break; }
+                        break;
+                    }
+                    if (c == (byte)'s' && i + 6 <= scanLim && rawBytes[i + 1] == (byte)'t' && rawBytes[i + 2] == (byte)'r'
+                        && rawBytes[i + 3] == (byte)'e' && rawBytes[i + 4] == (byte)'a' && rawBytes[i + 5] == (byte)'m') {
+                        break;
+                    }
+                    if (c == (byte)'e' && i + 6 <= scanLim && rawBytes[i + 1] == (byte)'n' && rawBytes[i + 2] == (byte)'d'
+                        && rawBytes[i + 3] == (byte)'o' && rawBytes[i + 4] == (byte)'b' && rawBytes[i + 5] == (byte)'j') {
+                        break;
+                    }
+                    if (c == (byte)'%') {
+                        while (i < scanLim && rawBytes[i] != (byte)'\n' && rawBytes[i] != (byte)'\r') i++;
+                        continue;
+                    }
+                    break;
                 }
+
                 if (dictStart >= 0) {
                     int depth = 0;
-                    for (int i = dictStart; i < searchEnd - 1; i++) {
-                        if (pdfStr[i] == '<' && pdfStr[i + 1] == '<') { depth++; i++; }
-                        else if (pdfStr[i] == '>' && pdfStr[i + 1] == '>') {
+                    int dictMax = Math.Min(n - 1, dictStart + 65536);
+                    bool inLit = false;
+                    int litParen = 0;
+                    for (int i = dictStart; i < dictMax; i++) {
+                        byte c = rawBytes[i];
+                        if (inLit) {
+                            if (c == (byte)'\\') { i++; continue; }
+                            if (c == (byte)'(') litParen++;
+                            else if (c == (byte)')') { litParen--; if (litParen <= 0) inLit = false; }
+                            continue;
+                        }
+                        if (c == (byte)'(') { inLit = true; litParen = 1; continue; }
+                        if (c == (byte)'<' && rawBytes[i + 1] == (byte)'<') { depth++; i++; }
+                        else if (c == (byte)'>' && rawBytes[i + 1] == (byte)'>') {
                             depth--; i++;
                             if (depth == 0) { dictEnd = i + 1; break; }
                         }
                     }
                     if (dictEnd > dictStart) {
-                        dict = pdfStr.Substring(dictStart, dictEnd - dictStart);
+                        dict = latin1.GetString(rawBytes, dictStart, dictEnd - dictStart);
                     }
                 }
 
-                // Locate stream ... endstream
+                int afterDict = dictEnd > 0 ? dictEnd : bodyStart;
+                int probe = afterDict;
+                while (probe < n && IsPdfWs(rawBytes[probe])) probe++;
+
                 byte[] streamBytes = null;
                 string rawBody = "";
-                int afterDict = dictEnd > 0 ? dictEnd : bodyStart;
-                int endObjPos = pdfStr.IndexOf("endobj", afterDict, StringComparison.Ordinal);
-                if (endObjPos < 0 || endObjPos > searchEnd) endObjPos = searchEnd;
+                bool isStream = probe + 6 <= n
+                    && rawBytes[probe] == (byte)'s' && rawBytes[probe + 1] == (byte)'t' && rawBytes[probe + 2] == (byte)'r'
+                    && rawBytes[probe + 3] == (byte)'e' && rawBytes[probe + 4] == (byte)'a' && rawBytes[probe + 5] == (byte)'m'
+                    && (probe + 6 == n || IsPdfWs(rawBytes[probe + 6]));
 
-                int streamKw = pdfStr.IndexOf("stream", afterDict, StringComparison.Ordinal);
-                if (streamKw >= 0 && streamKw < searchEnd && (streamKw < endObjPos || Regex.IsMatch(dict ?? "", @"/Length\s+\d+\b"))) {
-                    int sDataStart = streamKw + 6;
-                    if (sDataStart < pdfStr.Length && pdfStr[sDataStart] == '\r') sDataStart++;
-                    if (sDataStart < pdfStr.Length && pdfStr[sDataStart] == '\n') sDataStart++;
-                    Match lenM = Regex.Match(dict ?? "", @"/Length\s+(\d+)\b");
-                    int declLen;
-                    if (lenM.Success && int.TryParse(lenM.Groups[1].Value, out declLen) && declLen > 0 && sDataStart + declLen <= rawBytes.Length) {
-                        int probeEnd = Math.Min(pdfStr.Length, sDataStart + declLen + 16);
-                        string tail = pdfStr.Substring(sDataStart + declLen, probeEnd - (sDataStart + declLen));
-                        if (tail.TrimStart().StartsWith("endstream", StringComparison.Ordinal)) {
-                            streamBytes = new byte[declLen];
-                            Array.Copy(rawBytes, sDataStart, streamBytes, 0, declLen);
+                if (isStream) {
+                    int sDataStart = probe + 6;
+                    if (sDataStart < n && rawBytes[sDataStart] == (byte)'\r') sDataStart++;
+                    if (sDataStart < n && rawBytes[sDataStart] == (byte)'\n') sDataStart++;
+
+                    int declLen = ExtractDirectLengthFromDict(dict);
+                    if (declLen >= 0 && sDataStart + declLen <= n) {
+                        int tailPos = sDataStart + declLen;
+                        int chk = tailPos;
+                        while (chk < n && IsPdfWs(rawBytes[chk])) chk++;
+                        if (chk + 9 <= n && FindBytesAscii(rawBytes, chk, chk + 9, "endstream") == chk) {
+                            if (declLen > 0) {
+                                streamBytes = new byte[declLen];
+                                Array.Copy(rawBytes, sDataStart, streamBytes, 0, declLen);
+                            }
+                            pos = chk + 9;
                         }
                     }
-                    if (streamBytes == null) {
-                        int limEnd = Math.Max(sDataStart, endObjPos);
-                        int endStreamKw = pdfStr.LastIndexOf("endstream", limEnd, limEnd - sDataStart, StringComparison.Ordinal);
+                    if (pos <= probe) {
+                        int endStreamKw = FindBytesAscii(rawBytes, sDataStart, n, "endstream");
                         if (endStreamKw >= sDataStart) {
                             int sLen = endStreamKw - sDataStart;
                             if (sLen > 0 && rawBytes[sDataStart + sLen - 1] == (byte)'\n') sLen--;
                             if (sLen > 0 && rawBytes[sDataStart + sLen - 1] == (byte)'\r') sLen--;
-                            if (sLen > 0 && sDataStart + sLen <= rawBytes.Length) {
+                            if (sLen > 0) {
                                 streamBytes = new byte[sLen];
                                 Array.Copy(rawBytes, sDataStart, streamBytes, 0, sLen);
                             }
+                            pos = endStreamKw + 9;
+                        } else {
+                            pos = sDataStart;
                         }
                     }
-                } else if (string.IsNullOrEmpty(dict) && endObjPos > bodyStart) {
-                    rawBody = pdfStr.Substring(bodyStart, endObjPos - bodyStart).Trim();
+                    int eoAfter = FindBytesAscii(rawBytes, pos, Math.Min(n, pos + 128), "endobj");
+                    if (eoAfter >= pos) pos = eoAfter + 6;
+                } else {
+                    int endObjPos = FindBytesAscii(rawBytes, afterDict, Math.Min(n, afterDict + 65536), "endobj");
+                    if (endObjPos < 0) endObjPos = Math.Min(n, afterDict + 4096);
+                    if (string.IsNullOrEmpty(dict) && endObjPos > bodyStart) {
+                        rawBody = latin1.GetString(rawBytes, bodyStart, endObjPos - bodyStart).Trim();
+                    }
+                    pos = Math.Max(bodyStart, endObjPos + 6);
                 }
 
                 map[id] = new PdfIndirectObj { Id = id, Gen = gen, Dict = dict, RawBody = rawBody, RawStream = streamBytes };
             }
+            if (job != null) {
+                UpdateJobProgress(job, "indexing", string.Format("Indexed {0} PDF object(s).", map.Count), 0, 0, 14);
+            }
             return map;
+        }
+
+        private static ParseResult TryUnlockPdfSecurityFast(byte[] rawBytes, Encoding latin1, Dictionary<int, PdfIndirectObj> objs, string password, out PdfSecurityCtx secCtx) {
+            int tailLen = Math.Min(rawBytes.Length, 196 * 1024);
+            string tailStr = latin1.GetString(rawBytes, rawBytes.Length - tailLen, tailLen);
+            string probeStr = tailStr;
+            if (!probeStr.Contains("/Encrypt")) {
+                int headLen = Math.Min(rawBytes.Length, 64 * 1024);
+                string headStr = latin1.GetString(rawBytes, 0, headLen);
+                if (headStr.Contains("/Encrypt")) probeStr = headStr + "\n" + tailStr;
+                else {
+                    foreach (var kv in objs) {
+                        if (!string.IsNullOrEmpty(kv.Value.Dict) && kv.Value.Dict.Contains("/Encrypt")) {
+                            probeStr = kv.Value.Dict + "\n" + tailStr;
+                            break;
+                        }
+                    }
+                }
+            }
+            return TryUnlockPdfSecurity(probeStr, objs, password, out secCtx);
         }
 
         private static byte[] DecodePdfStream(byte[] raw, string dict) {

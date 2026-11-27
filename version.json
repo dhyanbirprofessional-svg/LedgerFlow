@@ -1,7 +1,7 @@
 {
-    "version":  "1.0.6",
+    "version":  "1.0.7",
     "repo":  "dhyanbirprofessional-svg/LedgerFlow",
-    "notes":  "Add real-time streaming PDF/Excel/AI/export progress dialog with page counter, percentage bar \u0026 live transactions feed; eliminate lag/crash on large PDFs via background job polling, font/XObject caching, binary font-stream skip, keep-alive protection \u0026 O(1) chunked ledger matching; add full-screen update overlay with Restart Required flow so old app window closes cleanly.",
+    "notes":  "Redesign desktop \u0026 mobile UI into clean Core / Planning / Intelligence sections with improved spacing and visual hierarchy; integrate LedgerFlow AI Q\u0026A chat directly with Google Gemini (plus OpenAI/Ollama) using live ledger snapshots \u0026 matching transactions; replace 25MB regex PDF indexer with ultra-fast single-pass byte scanner (fixes 400-500 page hang at Indexing PDF objects); upgrade live PDF progress modal with 4 pipeline phase indicators, elapsed timer, percentages, and live transactions feed.",
     "windowsAsset":  "LedgerFlow-Setup.exe",
     "androidAsset":  "LedgerFlow.apk",
     "releaseUrl":  "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"
