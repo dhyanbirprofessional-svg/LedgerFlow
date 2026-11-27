@@ -77,7 +77,131 @@ public final class StatementParser {
         }
     }
 
+    public static final class ParseJobState {
+        public String jobId = "";
+        public volatile boolean done;
+        public String phase = "queued";
+        public String stage = "Starting parser...";
+        public int currentPage;
+        public int totalPages;
+        public int percent;
+        public int txCount;
+        public final Object sync = new Object();
+        public final List<String> recentTx = new ArrayList<String>();
+        public ParseResult result;
+    }
+
+    private static final Object JOB_LOCK = new Object();
+    private static final Map<String, ParseJobState> PARSE_JOBS = new HashMap<String, ParseJobState>();
+    private static long JOB_SEQ = 0;
+
     private StatementParser() {}
+
+    private static void updateJobProgress(ParseJobState job, String phase, String stage, int currentPage, int totalPages, int percent, int txCount, List<String> newSnippets) {
+        if (job == null) return;
+        synchronized (job.sync) {
+            if (phase != null) job.phase = phase;
+            if (stage != null) job.stage = stage;
+            if (currentPage >= 0) job.currentPage = currentPage;
+            if (totalPages >= 0) job.totalPages = totalPages;
+            job.percent = Math.max(0, Math.min(100, percent));
+            if (txCount >= 0) job.txCount = txCount;
+            if (newSnippets != null) {
+                for (String s : newSnippets) {
+                    if (s == null || s.isEmpty()) continue;
+                    job.recentTx.add(s);
+                    if (job.recentTx.size() > 6) job.recentTx.remove(0);
+                }
+            }
+        }
+    }
+
+    public static ParseJobState createParseJob() {
+        ParseJobState job = new ParseJobState();
+        synchronized (JOB_LOCK) {
+            JOB_SEQ++;
+            job.jobId = "ajob_" + JOB_SEQ + "_" + System.currentTimeMillis();
+            job.phase = "starting";
+            job.stage = "Decoding uploaded file...";
+            job.percent = 3;
+            PARSE_JOBS.put(job.jobId, job);
+        }
+        return job;
+    }
+
+    public static void runParseJob(ParseJobState job, String fileName, String base64Payload, String password) {
+        try {
+            if (base64Payload == null || base64Payload.isEmpty()) {
+                ParseResult res = new ParseResult();
+                res.ok = false;
+                res.error = "Empty file payload.";
+                job.result = res;
+            } else {
+                String b64 = base64Payload;
+                int comma = b64.indexOf(',');
+                if (comma >= 0 && b64.substring(0, comma).contains("base64")) {
+                    b64 = b64.substring(comma + 1);
+                }
+                byte[] bytes = decodeBase64(b64);
+                b64 = null;
+                job.result = parseBytes(bytes, fileName, password, job);
+            }
+        } catch (Throwable ex) {
+            ParseResult res = new ParseResult();
+            res.ok = false;
+            res.error = "Parser error: " + (ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName());
+            job.result = res;
+        } finally {
+            synchronized (job.sync) {
+                job.percent = 100;
+                job.phase = (job.result != null && job.result.ok) ? "done" : "error";
+                int rCnt = (job.result != null && job.result.rows != null) ? job.result.rows.size() : 0;
+                job.stage = (job.result != null && job.result.ok)
+                        ? ("Completed! " + rCnt + " row(s) ready.")
+                        : (job.result != null ? job.result.error : "Failed");
+                if (rCnt > 0) job.txCount = Math.max(job.txCount, Math.max(0, rCnt - 1));
+                job.done = true;
+            }
+        }
+    }
+
+    public static String getParseJobStatusJson(String jobId) {
+        ParseJobState job;
+        synchronized (JOB_LOCK) {
+            job = PARSE_JOBS.get(jobId == null ? "" : jobId);
+        }
+        if (job == null) {
+            return "{\"ok\":false,\"done\":true,\"error\":\"Parse job not found.\"}";
+        }
+        StringBuilder sb = new StringBuilder(1024);
+        boolean isDone;
+        synchronized (job.sync) {
+            isDone = job.done;
+            sb.append("{\"ok\":true,\"done\":").append(isDone);
+            sb.append(",\"phase\":"); appendJsonString(sb, job.phase);
+            sb.append(",\"stage\":"); appendJsonString(sb, job.stage);
+            sb.append(",\"currentPage\":").append(job.currentPage);
+            sb.append(",\"totalPages\":").append(job.totalPages);
+            sb.append(",\"percent\":").append(job.percent);
+            sb.append(",\"txCount\":").append(job.txCount);
+            sb.append(",\"recentTx\":[");
+            for (int i = 0; i < job.recentTx.size(); i++) {
+                if (i > 0) sb.append(',');
+                appendJsonString(sb, job.recentTx.get(i));
+            }
+            sb.append(']');
+            if (isDone && job.result != null) {
+                sb.append(",\"result\":").append(job.result.toJson());
+            }
+            sb.append('}');
+        }
+        if (isDone) {
+            synchronized (JOB_LOCK) {
+                PARSE_JOBS.remove(jobId);
+            }
+        }
+        return sb.toString();
+    }
 
     public static String handleParseRequest(String fileName, String base64Payload, String password) {
         if (base64Payload == null || base64Payload.isEmpty()) {
@@ -100,10 +224,14 @@ public final class StatementParser {
             res.error = "Failed to decode file: " + ex.getMessage();
             return res.toJson();
         }
-        return parseBytes(bytes, fileName, password).toJson();
+        return parseBytes(bytes, fileName, password, null).toJson();
     }
 
     public static ParseResult parseBytes(byte[] bytes, String fileName, String password) {
+        return parseBytes(bytes, fileName, password, null);
+    }
+
+    public static ParseResult parseBytes(byte[] bytes, String fileName, String password, ParseJobState job) {
         ParseResult res = new ParseResult();
         if (bytes == null || bytes.length == 0) {
             res.error = "File is empty.";
@@ -113,7 +241,7 @@ public final class StatementParser {
 
         // 0. PDF signature (%PDF-) -> Native local PDF text & table extractor
         if (isPdfSignature(bytes)) {
-            return parsePdfBytes(bytes, pw);
+            return parsePdfBytes(bytes, pw, job);
         }
 
         // 1. ZIP signature (PK\x03\x04) -> .xlsx
@@ -1384,9 +1512,61 @@ public final class StatementParser {
         return false;
     }
 
-    private static ParseResult parsePdfBytes(byte[] bytes, String password) {
+    private static final Pattern SKIP_BIN_STREAM_PAT = Pattern.compile("(/Subtype\\s*/(?:Image|CIDFontType0C|Type1C|OpenType)\\b|/Length1\\s+\\d+\\b)");
+    private static final Pattern OBJ_STM_PAT = Pattern.compile("/Type\\s*/ObjStm\\b");
+    private static final Pattern PAGE_TYPE_PAT = Pattern.compile("/Type\\s*/Page\\b(?!s)");
+    private static final Pattern PAGE_RES_KEY_PAT = Pattern.compile("(/Resources\\s+\\d+\\s+\\d+\\s+R|/Resources\\s*<<[^>]*>>|/Parent\\s+\\d+\\s+\\d+\\s+R)");
+    private static final Pattern LIVE_TX_PAT = Pattern.compile("(?:\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{2,4}|\\d{1,3}(?:,\\d{2,3})*\\.\\d{2})");
+
+    private static List<String> extractPageLiveSnippets(List<PdfTextFrag> pageFrags, int[] outHits) {
+        outHits[0] = 0;
+        List<String> snippets = new ArrayList<String>();
+        if (pageFrags == null || pageFrags.isEmpty()) return snippets;
+        List<PdfTextFrag> sorted = new ArrayList<PdfTextFrag>(pageFrags);
+        Collections.sort(sorted, (a, b) -> {
+            int yc = Double.compare(b.y, a.y);
+            return yc != 0 ? yc : Double.compare(a.x, b.x);
+        });
+        List<List<PdfTextFrag>> lines = new ArrayList<List<PdfTextFrag>>();
+        for (PdfTextFrag f : sorted) {
+            if (!lines.isEmpty() && Math.abs(lines.get(lines.size() - 1).get(0).y - f.y) <= 2.8) {
+                lines.get(lines.size() - 1).add(f);
+            } else {
+                List<PdfTextFrag> l = new ArrayList<PdfTextFrag>();
+                l.add(f);
+                lines.add(l);
+            }
+        }
+        for (List<PdfTextFrag> ln : lines) {
+            Collections.sort(ln, (a, b) -> Double.compare(a.x, b.x));
+            StringBuilder sb = new StringBuilder();
+            for (PdfTextFrag f : ln) {
+                String t = f.text == null ? "" : f.text.trim();
+                if (t.isEmpty()) continue;
+                if (sb.length() > 0) sb.append("  ");
+                sb.append(t);
+                if (sb.length() > 92) break;
+            }
+            String text = sb.toString().replaceAll("\\s+", " ").trim();
+            if (text.length() < 10) continue;
+            String lower = text.toLowerCase(Locale.US);
+            if (lower.contains("page no") || lower.contains("statement summary") || lower.contains("please do not share")) continue;
+            if (LIVE_TX_PAT.matcher(text).find()) {
+                outHits[0]++;
+                if (text.length() > 88) text = text.substring(0, 85) + "...";
+                snippets.add(text);
+            }
+        }
+        if (snippets.size() > 5) {
+            return new ArrayList<String>(snippets.subList(snippets.size() - 5, snippets.size()));
+        }
+        return snippets;
+    }
+
+    private static ParseResult parsePdfBytes(byte[] bytes, String password, ParseJobState job) {
         ParseResult res = new ParseResult();
         try {
+            updateJobProgress(job, "indexing", "Indexing PDF objects...", 0, 0, 5, 0, null);
             String pdfStr = new String(bytes, StandardCharsets.ISO_8859_1);
             Map<Integer, PdfIndirectObj> objs = parsePdfObjects(bytes, pdfStr);
             Object[] secAttempt = tryUnlockPdfSecurity(pdfStr, objs, password);
@@ -1398,13 +1578,13 @@ public final class StatementParser {
             PdfCMap globalCMap = new PdfCMap();
             Map<Integer, PdfCMap> objCMaps = new HashMap<Integer, PdfCMap>();
 
-            Pattern imgSubPat = Pattern.compile("/Subtype\\s*/Image\\b");
-            Pattern objStmPat = Pattern.compile("/Type\\s*/ObjStm\\b");
             List<Integer> objIds = new ArrayList<Integer>(objs.keySet());
-            for (int id : objIds) {
+            int totalObjs = objIds.size();
+            for (int oi = 0; oi < totalObjs; oi++) {
+                int id = objIds.get(oi);
                 PdfIndirectObj o = objs.get(id);
                 if (o.rawStream != null) {
-                    if (o.dict != null && imgSubPat.matcher(o.dict).find()) {
+                    if (o.dict != null && SKIP_BIN_STREAM_PAT.matcher(o.dict).find()) {
                         o.rawStream = null;
                         continue;
                     }
@@ -1422,11 +1602,15 @@ public final class StatementParser {
                                 mergePdfCMap(globalCMap, cm);
                             }
                         }
-                        if (o.dict != null && objStmPat.matcher(o.dict).find()) {
+                        if (o.dict != null && OBJ_STM_PAT.matcher(o.dict).find()) {
                             extractPdfObjStm(o.decodedStream, o.dict, objs);
                             o.decodedStream = null;
                         }
                     }
+                }
+                if (job != null && totalObjs > 0 && (oi % 100 == 0 || oi == totalObjs - 1)) {
+                    int decPct = 6 + (int) (10.0 * (oi + 1) / totalObjs);
+                    updateJobProgress(job, "decoding", "Decoding PDF streams & fonts...", 0, 0, decPct, -1, null);
                 }
             }
             pdfStr = null;
@@ -1441,23 +1625,44 @@ public final class StatementParser {
             } else {
                 List<Integer> sortedIds = new ArrayList<Integer>(objs.keySet());
                 Collections.sort(sortedIds);
-                Pattern pagePat = Pattern.compile("/Type\\s*/Page\\b(?!s)");
                 for (int id : sortedIds) {
                     PdfIndirectObj o = objs.get(id);
-                    if (o.dict != null && pagePat.matcher(o.dict).find()) {
+                    if (o.dict != null && PAGE_TYPE_PAT.matcher(o.dict).find()) {
                         pageObjs.add(o);
                     }
                 }
             }
 
             List<PdfTextFrag> allFrags = new ArrayList<PdfTextFrag>();
+            Map<String, Map<String, PdfCMap>> fontCache = new HashMap<String, Map<String, PdfCMap>>();
+            Map<String, Map<String, PdfIndirectObj>> xobjCache = new HashMap<String, Map<String, PdfIndirectObj>>();
             int pageNum = 0;
+            int totalPages = pageObjs.size();
+            int runningTxHits = 0;
 
             if (!pageObjs.isEmpty()) {
+                updateJobProgress(job, "reading", "Reading page 1 of " + totalPages + "...", 0, totalPages, 16, 0, null);
+                List<PdfTextFrag> pageFrags = new ArrayList<PdfTextFrag>(256);
+                List<String> batchSnippets = new ArrayList<String>();
+                int[] hitsOut = new int[1];
                 for (PdfIndirectObj page : pageObjs) {
                     pageNum++;
-                    Map<String, PdfCMap> fontCMaps = resolvePageFontCMaps(page, objs, objCMaps);
-                    Map<String, PdfIndirectObj> formXObjs = resolvePageFormXObjects(page, objs);
+                    String cacheKey = null;
+                    String pDict = page.dict == null ? "" : page.dict;
+                    Matcher rkm = PAGE_RES_KEY_PAT.matcher(pDict);
+                    if (rkm.find() && !pDict.contains("/Font <<") && !pDict.contains("/XObject <<")) {
+                        cacheKey = rkm.group(1);
+                    }
+                    Map<String, PdfCMap> fontCMaps = cacheKey != null ? fontCache.get(cacheKey) : null;
+                    if (fontCMaps == null) {
+                        fontCMaps = resolvePageFontCMaps(page, objs, objCMaps);
+                        if (cacheKey != null) fontCache.put(cacheKey, fontCMaps);
+                    }
+                    Map<String, PdfIndirectObj> formXObjs = cacheKey != null ? xobjCache.get(cacheKey) : null;
+                    if (formXObjs == null) {
+                        formXObjs = resolvePageFormXObjects(page, objs);
+                        if (cacheKey != null) xobjCache.put(cacheKey, formXObjs);
+                    }
                     List<Integer> contentIds = extractPdfContentRefs(page.dict, objs);
                     ByteArrayOutputStream combined = new ByteArrayOutputStream();
                     for (int cid : contentIds) {
@@ -1468,8 +1673,27 @@ public final class StatementParser {
                         }
                     }
                     byte[] pageBytes = combined.toByteArray();
+                    pageFrags.clear();
                     if (pageBytes.length > 0) {
-                        extractPdfContentText(pageBytes, pageNum, objs, objCMaps, fontCMaps, globalCMap, formXObjs, null, allFrags, 0);
+                        extractPdfContentText(pageBytes, pageNum, objs, objCMaps, fontCMaps, globalCMap, formXObjs, null, pageFrags, 0);
+                        if (!pageFrags.isEmpty()) {
+                            allFrags.addAll(pageFrags);
+                            if (job != null) {
+                                List<String> snips = extractPageLiveSnippets(pageFrags, hitsOut);
+                                runningTxHits += hitsOut[0];
+                                if (!snips.isEmpty()) {
+                                    batchSnippets.addAll(snips);
+                                    if (batchSnippets.size() > 6) {
+                                        batchSnippets = new ArrayList<String>(batchSnippets.subList(batchSnippets.size() - 6, batchSnippets.size()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (job != null && (pageNum == 1 || pageNum == totalPages || pageNum % 2 == 0)) {
+                        int pct = 16 + (int) (70.0 * pageNum / Math.max(1, totalPages));
+                        updateJobProgress(job, "reading", "Reading page " + pageNum + " of " + totalPages + "...", pageNum, totalPages, pct, runningTxHits, batchSnippets);
+                        batchSnippets.clear();
                     }
                 }
             } else {
@@ -1489,13 +1713,17 @@ public final class StatementParser {
 
             objs.clear();
             objCMaps.clear();
+            fontCache.clear();
+            xobjCache.clear();
             if (allFrags.isEmpty()) {
                 res.format = "pdf-scanned";
                 res.error = "No selectable text found in this PDF (it looks like a scanned image PDF). Use 'Paste / OCR Text' or configure Vision AI in Settings.";
                 return res;
             }
 
+            updateJobProgress(job, "building", "Aligning columns across " + Math.max(1, totalPages) + " page(s)...", totalPages, totalPages, 90, runningTxHits, null);
             List<List<String>> rows = buildPdfTableRows(allFrags);
+            allFrags.clear();
             if (rows.isEmpty()) {
                 res.format = "pdf-empty";
                 res.error = "Could not extract readable transaction rows from this PDF.";

@@ -41,7 +41,7 @@
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const API_TOKEN = URL_PARAMS.get("token") || "";
   const IS_PREVIEW_PARAM = URL_PARAMS.get("preview") === "1";
-  const APP_VERSION = "1.0.5";
+  const APP_VERSION = "1.0.6";
   const GITHUB_REPO = "dhyanbirprofessional-svg/LedgerFlow";
 
   let isDesktopHost = false;
@@ -171,26 +171,85 @@
     fn(payloadJson);
   };
 
-  function showPdfProgress(title = "Reading PDF Statement...", sub = "Extracting transactions locally. Large statements may take a few seconds...") {
+  function yieldToUi() {
+    return new Promise((r) => setTimeout(r, 0));
+  }
+
+  function showPdfProgress(title = "Reading PDF Statement...", sub = "Preparing file...", opts = {}) {
     const modal = document.getElementById("pdf-progress-modal");
     if (!modal) return;
     const tEl = document.getElementById("pdf-progress-title");
     const sEl = document.getElementById("pdf-progress-sub");
     if (tEl) tEl.textContent = title;
     if (sEl) sEl.textContent = sub;
+    updatePdfProgress({
+      percent: typeof opts.percent === "number" ? opts.percent : 6,
+      stats: opts.stats || "Starting...",
+      feed: Array.isArray(opts.feed) ? opts.feed : []
+    });
     modal.classList.remove("hidden");
   }
 
-  function updatePdfProgress(sub, title = null) {
+  function updatePdfProgress(subOrOpts, title = null) {
     const tEl = document.getElementById("pdf-progress-title");
     const sEl = document.getElementById("pdf-progress-sub");
-    if (title !== null && tEl) tEl.textContent = title;
-    if (sub !== null && sEl) sEl.textContent = sub;
+    const pctEl = document.getElementById("pdf-progress-pct");
+    const fillEl = document.getElementById("pdf-progress-fill");
+    const statsEl = document.getElementById("pdf-progress-stats");
+    const feedEl = document.getElementById("pdf-progress-feed");
+    const opts = (subOrOpts && typeof subOrOpts === "object") ? subOrOpts : { sub: subOrOpts };
+    const nextTitle = title !== null ? title : opts.title;
+    if (nextTitle !== undefined && nextTitle !== null && tEl) tEl.textContent = nextTitle;
+    if (opts.sub !== undefined && opts.sub !== null && sEl) sEl.textContent = opts.sub;
+    if (typeof opts.percent === "number") {
+      const p = Math.max(0, Math.min(100, Math.round(opts.percent)));
+      if (pctEl) pctEl.textContent = p + "%";
+      if (fillEl) fillEl.style.width = p + "%";
+    }
+    if (opts.stats !== undefined && statsEl) statsEl.textContent = opts.stats;
+    if (Array.isArray(opts.feed) && feedEl) {
+      if (opts.feed.length === 0) {
+        feedEl.classList.add("hidden");
+        feedEl.innerHTML = "";
+      } else {
+        feedEl.classList.remove("hidden");
+        feedEl.innerHTML = opts.feed.slice(-6).map((item) =>
+          `<div class="lf-progress-feed-row"><span class="lf-progress-feed-dot"></span><span>${esc(String(item || ""))}</span></div>`
+        ).join("");
+        feedEl.scrollTop = feedEl.scrollHeight;
+      }
+    }
   }
 
   function hidePdfProgress() {
     const modal = document.getElementById("pdf-progress-modal");
     if (modal) modal.classList.add("hidden");
+  }
+
+  function showFullUpdateOverlay({ title = "Installing Update...", sub = "Downloading package...", percent = 25, readyToRestart = false, onRestart = null } = {}) {
+    const ov = document.getElementById("full-update-overlay");
+    if (!ov) return;
+    const sp = document.getElementById("full-upd-spinner");
+    const ic = document.getElementById("full-upd-icon");
+    const tEl = document.getElementById("full-upd-title");
+    const sEl = document.getElementById("full-upd-sub");
+    const fEl = document.getElementById("full-upd-fill");
+    const btn = document.getElementById("full-upd-restart-btn");
+    if (tEl) tEl.textContent = title;
+    if (sEl) sEl.textContent = sub;
+    if (fEl) fEl.style.width = Math.max(0, Math.min(100, Math.round(percent))) + "%";
+    if (sp) sp.classList.toggle("hidden", !!readyToRestart);
+    if (ic) ic.classList.toggle("hidden", !readyToRestart);
+    if (btn) {
+      btn.classList.toggle("hidden", !readyToRestart);
+      btn.onclick = typeof onRestart === "function" ? onRestart : null;
+    }
+    ov.classList.remove("hidden");
+  }
+
+  function hideFullUpdateOverlay() {
+    const ov = document.getElementById("full-update-overlay");
+    if (ov) ov.classList.add("hidden");
   }
 
   function isGeminiConnected() {
@@ -535,6 +594,61 @@
     });
   }
 
+  async function parseStatementWithLiveProgress(payloadObj, onUpdate = null) {
+    const bodyStr = JSON.stringify(payloadObj || {});
+    const emit = (st) => {
+      if (typeof onUpdate === "function" && st) onUpdate(st);
+    };
+
+    // Android streaming job path
+    if (window.LedgerFlowAndroid) {
+      const bridge = window.LedgerFlowAndroid;
+      if (typeof bridge.startParseStatementJob === "function" && typeof bridge.getParseStatementJobStatus === "function") {
+        const startRes = JSON.parse(bridge.startParseStatementJob(bodyStr));
+        if (!startRes || !startRes.ok || !startRes.jobId) {
+          throw new Error(startRes?.error || "Could not start Android parser job.");
+        }
+        while (true) {
+          await new Promise((r) => setTimeout(r, 180));
+          const st = JSON.parse(bridge.getParseStatementJobStatus(startRes.jobId));
+          emit(st);
+          if (st.done) {
+            if (!st.result) throw new Error(st.error || "Parser job ended without result.");
+            return st.result;
+          }
+        }
+      }
+      return await callAndroidParser(bodyStr);
+    }
+
+    // Windows desktop host streaming job path
+    if (isDesktopHost) {
+      const hdrs = { "Content-Type": "application/json" };
+      if (API_TOKEN) hdrs["X-LedgerFlow-Token"] = API_TOKEN;
+      let startRes = null;
+      try {
+        const r = await fetch("/api/parse-statement-start", { method: "POST", headers: hdrs, body: bodyStr });
+        if (r.ok) startRes = await r.json();
+      } catch (_) {}
+      if (startRes && startRes.ok && startRes.jobId) {
+        while (true) {
+          await new Promise((r) => setTimeout(r, 180));
+          const sr = await fetch(`/api/parse-statement-status?job=${encodeURIComponent(startRes.jobId)}`, { headers: hdrs, cache: "no-store" });
+          if (!sr.ok) throw new Error("HTTP " + sr.status);
+          const st = await sr.json();
+          emit(st);
+          if (st.done) {
+            if (!st.result) throw new Error(st.error || "Parser job ended without result.");
+            return st.result;
+          }
+        }
+      }
+      return await apiFetch("/api/parse-statement", { method: "POST", body: bodyStr });
+    }
+
+    return await apiFetch("/api/parse-statement", { method: "POST", body: bodyStr });
+  }
+
   async function apiFetch(path, options = {}) {
     if (window.LedgerFlowAndroid) {
       const method = String(options.method || "GET").toUpperCase();
@@ -696,20 +810,42 @@
       .filter((w) => w.length >= 2 && !PARTY_STOPWORDS.has(w));
   }
 
-  function findBestMatchingLedger(tx, rawNarration = "") {
-    const ledgers = (state.ledgers || []).filter((l) => l && l.type !== "drawings");
+  function buildLedgerMatchCache() {
+    const byNorm = new Map();
+    const list = (state.ledgers || []).filter((l) => l && l.type !== "drawings");
+    for (const l of list) {
+      const ln = normalizePayeeKey(l.name);
+      if (ln && !byNorm.has(ln)) byNorm.set(ln, l);
+      if (Array.isArray(l.aliases)) {
+        for (const a of l.aliases) {
+          const an = normalizePayeeKey(a);
+          if (an && !byNorm.has(an)) byNorm.set(an, l);
+        }
+      }
+    }
+    return { list, byNorm };
+  }
+
+  function findBestMatchingLedger(tx, rawNarration = "", ledgerCache = null) {
+    const ledgers = ledgerCache ? ledgerCache.list : (state.ledgers || []).filter((l) => l && l.type !== "drawings");
     if (!ledgers.length) return null;
 
     const pNorm = normalizePayeeKey(tx.payee);
+    if (ledgerCache && pNorm && ledgerCache.byNorm.has(pNorm)) {
+      return ledgerCache.byNorm.get(pNorm);
+    }
+
     const fullText = `${tx.payee || ""} ${rawNarration || ""} ${tx.notes || ""}`;
     const normFull = " " + fullText.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() + " ";
     const txTokens = new Set(cleanPersonTokens(fullText));
 
     // 1. Exact normalized name or alias match on payee
-    for (const l of ledgers) {
-      const lNorm = normalizePayeeKey(l.name);
-      if (pNorm && lNorm && pNorm === lNorm) return l;
-      if (Array.isArray(l.aliases) && l.aliases.some((a) => normalizePayeeKey(a) === pNorm)) return l;
+    if (!ledgerCache) {
+      for (const l of ledgers) {
+        const lNorm = normalizePayeeKey(l.name);
+        if (pNorm && lNorm && pNorm === lNorm) return l;
+        if (Array.isArray(l.aliases) && l.aliases.some((a) => normalizePayeeKey(a) === pNorm)) return l;
+      }
     }
 
     // 2. Whole-phrase or multi-token match inside full narration (catches IMPS/NEFT/UPI variants)
@@ -750,11 +886,14 @@
     return best;
   }
 
-  function findOrCreateLedger(name, type = "person") {
+  function findOrCreateLedger(name, type = "person", ledgerCache = null) {
     const cleanName = String(name || "").trim();
     if (!cleanName) return null;
     const norm = normalizePayeeKey(cleanName);
     if (!state.ledgers) state.ledgers = [];
+    if (ledgerCache && norm && ledgerCache.byNorm.has(norm)) {
+      return ledgerCache.byNorm.get(norm);
+    }
     const existing = state.ledgers.find((l) =>
       l.name.toLowerCase() === cleanName.toLowerCase()
       || (norm && normalizePayeeKey(l.name) === norm)
@@ -772,10 +911,14 @@
       notes: "Auto-created from bank narration"
     };
     state.ledgers.push(led);
+    if (ledgerCache) {
+      ledgerCache.list.push(led);
+      if (norm && !ledgerCache.byNorm.has(norm)) ledgerCache.byNorm.set(norm, led);
+    }
     return led;
   }
 
-  function autoAssignLedgerForTx(tx, rawNarration = "", createMissing = true) {
+  function autoAssignLedgerForTx(tx, rawNarration = "", createMissing = true, ledgerCache = null) {
     if (!tx || tx.type === "transfer") return tx;
     if (tx.ledgerId && getLedger(tx.ledgerId)) return tx;
 
@@ -794,7 +937,7 @@
     }
 
     // First try matching any existing person/party ledger across full narration (catches IMPS/NEFT/UPI variants!)
-    const matchedExisting = findBestMatchingLedger(tx, rawNarration);
+    const matchedExisting = findBestMatchingLedger(tx, rawNarration, ledgerCache);
     if (matchedExisting) {
       tx.ledgerId = matchedExisting.id;
       if (matchedExisting.protectedFromDrawings || matchedExisting.isUserCreated) {
@@ -814,7 +957,7 @@
       || /\b(neft|imps|rtgs|mmt\/imps|upi\/(dr|cr))\b/i.test(fullNar);
 
     if (!isGeneric && isPartyCandidate && createMissing) {
-      const led = findOrCreateLedger(cleanPayee, "person");
+      const led = findOrCreateLedger(cleanPayee, "person", ledgerCache);
       if (led) tx.ledgerId = led.id;
     }
     return tx;
@@ -2980,7 +3123,14 @@
         </div>
       </div>`;
 
-    document.getElementById("print-pdf-btn").onclick = () => window.print();
+    document.getElementById("print-pdf-btn").onclick = async () => {
+      showPdfProgress("🖨 Generating PDF Statement Report...", "Preparing charts & tax summary for print...", { percent: 45, stats: "Rendering printable statement..." });
+      await yieldToUi();
+      setTimeout(() => {
+        updatePdfProgress({ sub: "Opening system Print / Save PDF dialog...", percent: 100, stats: "Report ready!" });
+        setTimeout(() => { hidePdfProgress(); window.print(); }, 180);
+      }, 120);
+    };
   }
 
   /* ---------- Smart Rules View ---------- */
@@ -3185,30 +3335,62 @@
   }
 
   async function runSmartPayeeCleanupAndClassify(onProgress = null) {
-    let cleaned = 0;
-    const histIdx = buildHistoricalClassifierIndex();
-    for (const t of state.transactions || []) {
-      const rawSrc = t.rawNarration || t.notes || "";
-      let nextPayee = t.payee || "";
-      if (rawSrc) {
-        const reparsed = parseBankNarration(rawSrc, t.type === "income");
-        if (reparsed.payee && reparsed.payee !== nextPayee) {
-          nextPayee = reparsed.payee;
+    const list = state.transactions || [];
+    const total = list.length;
+    showPdfProgress("✨ Analyzing & Cleaning Payees...", `Scanning ${total} transaction(s)...`, {
+      percent: 8,
+      stats: `0 / ${total} analyzed`
+    });
+    try {
+      let cleaned = 0;
+      const histIdx = buildHistoricalClassifierIndex();
+      const recentFeed = [];
+      for (let i = 0; i < total; i++) {
+        const t = list[i];
+        const rawSrc = t.rawNarration || t.notes || "";
+        let nextPayee = t.payee || "";
+        if (rawSrc) {
+          const reparsed = parseBankNarration(rawSrc, t.type === "income");
+          if (reparsed.payee && reparsed.payee !== nextPayee) {
+            nextPayee = reparsed.payee;
+          }
+        }
+        nextPayee = cleanBankPayeeDisplay(nextPayee, rawSrc) || nextPayee;
+        if (nextPayee && nextPayee !== t.payee) {
+          t.payee = nextPayee;
+          cleaned++;
+          recentFeed.push(`Cleaned: ${t.payee}`);
+          if (recentFeed.length > 6) recentFeed.shift();
+        }
+        if (t.type !== "transfer") autoClassifyBankTx(t, rawSrc, histIdx);
+        if (i % 200 === 199 || i === total - 1) {
+          const pct = total ? Math.round(10 + 45 * (i + 1) / total) : 55;
+          updatePdfProgress({
+            sub: `Normalizing narrations & local payee matching...`,
+            percent: pct,
+            stats: `${i + 1} / ${total} transactions scanned • ${cleaned} cleaned`,
+            feed: recentFeed
+          });
+          await yieldToUi();
         }
       }
-      nextPayee = cleanBankPayeeDisplay(nextPayee, rawSrc) || nextPayee;
-      if (nextPayee && nextPayee !== t.payee) {
-        t.payee = nextPayee;
-        cleaned++;
-      }
-      if (t.type !== "transfer") autoClassifyBankTx(t, rawSrc, histIdx);
+      const aiRes = await runHybridAIClassification(list, {
+        onlyUncertain: state.settings.aiConfig?.mode !== "llm_all",
+        onProgress: (msg, pctVal, feedArr) => {
+          if (typeof onProgress === "function") onProgress(msg);
+          updatePdfProgress({
+            sub: msg,
+            percent: typeof pctVal === "number" ? Math.round(55 + pctVal * 0.4) : 75,
+            feed: feedArr
+          });
+        }
+      });
+      updatePdfProgress({ sub: "Saving updated classifications to vault...", percent: 97 });
+      await saveState();
+      return { cleaned, classified: aiRes.updated, source: aiRes.source };
+    } finally {
+      hidePdfProgress();
     }
-    const aiRes = await runHybridAIClassification(state.transactions || [], {
-      onlyUncertain: state.settings.aiConfig?.mode !== "llm_all",
-      onProgress
-    });
-    await saveState();
-    return { cleaned, classified: aiRes.updated, source: aiRes.source };
   }
 
   function renderAiAssistantView(root) {
@@ -3680,8 +3862,18 @@
     const testChime = document.getElementById("test-chime-btn");
     if (testChime) testChime.onclick = () => playLogoChime(true);
 
-    document.getElementById("download-json-btn").onclick = () => {
-      downloadFile(`ledgerflow-backup-${todayISO()}.json`, JSON.stringify(state, null, 2), "application/json");
+    document.getElementById("download-json-btn").onclick = async () => {
+      const cnt = (state.transactions || []).length;
+      showPdfProgress("💾 Generating Vault Backup...", `Packaging ${cnt} transaction(s)...`, { percent: 40, stats: `${cnt} entries` });
+      await yieldToUi();
+      try {
+        const jsonStr = JSON.stringify(state, null, 2);
+        updatePdfProgress({ sub: "Writing JSON backup file...", percent: 95, stats: `${(jsonStr.length / 1024).toFixed(1)} KB` });
+        downloadFile(`ledgerflow-backup-${todayISO()}.json`, jsonStr, "application/json");
+        toast("Vault JSON backup exported.");
+      } finally {
+        hidePdfProgress();
+      }
     };
     document.getElementById("restore-json-btn").onclick = () => document.getElementById("restore-json-input").click();
     document.getElementById("restore-json-input").onchange = (e) => {
@@ -3765,11 +3957,20 @@
       const statusEl = document.getElementById("ai-status-msg");
       btn.disabled = true;
       btn.textContent = "Running AI…";
+      showPdfProgress("✨ Analyzing & Re-Classifying Entries...", `Inspecting ${(state.transactions || []).length} transaction(s)...`, { percent: 10 });
       try {
         const res = await runHybridAIClassification(state.transactions || [], {
           onlyUncertain: state.settings.aiConfig.mode !== "llm_all",
-          onProgress: (msg) => { statusEl.textContent = msg; }
+          onProgress: (msg, pctVal, feedArr) => {
+            statusEl.textContent = msg;
+            updatePdfProgress({
+              sub: msg,
+              percent: typeof pctVal === "number" ? pctVal : 65,
+              feed: feedArr
+            });
+          }
         });
+        updatePdfProgress({ sub: "Saving updated entries...", percent: 96 });
         await saveState();
         statusEl.textContent = `Updated ${res.updated} transaction(s) via ${res.source}.`;
         toast(`✨ Re-classified ${res.updated} transaction(s)!`);
@@ -3777,6 +3978,7 @@
         statusEl.textContent = "Error: " + err.message;
         toast("AI re-classify failed: " + err.message);
       } finally {
+        hidePdfProgress();
         btn.disabled = false;
         btn.textContent = "✨ Re-Classify All Entries";
       }
@@ -5722,16 +5924,29 @@
     }
     if (isAndroidHost && window.LedgerFlowAndroid) {
       if (typeof window.LedgerFlowAndroid.downloadAndInstallApkAsync === "function") {
-        toast(`Downloading LedgerFlow v${latestUpdateInfo.version} APK…`);
+        showFullUpdateOverlay({
+          title: `Installing LedgerFlow v${latestUpdateInfo.version}...`,
+          sub: "Downloading Android APK package from GitHub...",
+          percent: 35,
+          readyToRestart: false
+        });
         try {
-          const raw = await callAndroidAsync("downloadAndInstallApkAsync", [targetUrl, ghToken]);
+          const raw = await callAndroidAsync("downloadAndInstallApkAsync", [targetUrl, ghToken], 120000);
           const res = JSON.parse(raw || "{}");
           if (res && res.ok) {
-            toast("Update downloaded! Confirm Install on screen.");
+            showFullUpdateOverlay({
+              title: `Update v${latestUpdateInfo.version} Downloaded`,
+              sub: "Confirm Android's install prompt, then tap below if needed to reopen or check update.",
+              percent: 100,
+              readyToRestart: true,
+              onRestart: () => { hideFullUpdateOverlay(); window.location.reload(); }
+            });
           } else {
+            hideFullUpdateOverlay();
             toast(res?.error || "Could not launch APK installer.");
           }
         } catch (e) {
+          hideFullUpdateOverlay();
           toast("APK update failed: " + (e?.message || e));
         }
         return;
@@ -5747,14 +5962,42 @@
         window.open(targetUrl, "_blank");
         return;
       }
-      toast("Downloading update installer… LedgerFlow will restart automatically.");
+      showFullUpdateOverlay({
+        title: `Downloading LedgerFlow v${latestUpdateInfo.version}...`,
+        sub: "Preparing Windows update installer in the background. Please wait...",
+        percent: 40,
+        readyToRestart: false
+      });
       try {
         const res = await apiFetch("/api/install-update", {
           method: "POST",
           body: JSON.stringify({ url: targetUrl, token: ghToken })
         });
-        if (!res || !res.ok) toast(res?.error || "Update download failed.", true);
+        if (!res || !res.ok) {
+          hideFullUpdateOverlay();
+          toast(res?.error || "Update download failed.", true);
+          return;
+        }
+        showFullUpdateOverlay({
+          title: `Update v${latestUpdateInfo.version} Ready — Restart Required`,
+          sub: "Restart LedgerFlow to install the new version and close this old window cleanly.",
+          percent: 100,
+          readyToRestart: true,
+          onRestart: async () => {
+            showFullUpdateOverlay({
+              title: `Restarting to v${latestUpdateInfo.version}...`,
+              sub: "Closing current session and launching the updated app...",
+              percent: 100,
+              readyToRestart: false
+            });
+            try {
+              await apiFetch("/api/apply-update-restart", { method: "POST", body: "{}" });
+            } catch (_) {}
+            setTimeout(() => { try { window.close(); } catch (_) {} }, 180);
+          }
+        });
       } catch (e) {
+        hideFullUpdateOverlay();
         toast("Update download failed: " + (e?.message || e), true);
       }
       return;
@@ -5797,9 +6040,13 @@
     const validCatIds = new Set((state.categories || []).map((c) => c.id));
     const batchSize = 25;
     let llmUpdated = 0;
+    const feedArr = [];
     for (let i = 0; i < targets.length; i += batchSize) {
       const batch = targets.slice(i, i + batchSize);
-      if (opts.onProgress) opts.onProgress(`Analyzing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(targets.length / batchSize)} with ${cfg.provider}…`);
+      const bIdx = Math.floor(i / batchSize) + 1;
+      const bTot = Math.ceil(targets.length / batchSize);
+      const pct = Math.min(95, Math.round(15 + 80 * bIdx / Math.max(1, bTot)));
+      if (opts.onProgress) opts.onProgress(`Analyzing batch ${bIdx} of ${bTot} with ${cfg.provider} (${Math.min(i + batch.length, targets.length)}/${targets.length})…`, pct, feedArr);
       const results = await classifyBatchWithLLM(batch, cfg);
       for (const r of results) {
         const tx = batch[Number(r.idx)];
@@ -5825,8 +6072,11 @@
         tx.aiConfidence = 0.95;
         tx.aiReason = `${cfg.provider.toUpperCase()}: ${String(r.reason || "Classified by AI").slice(0, 80)}`;
         learnFromTransaction(tx);
+        feedArr.push(`${tx.payee} → ${getCat(tx.category).name}`);
+        if (feedArr.length > 6) feedArr.shift();
         llmUpdated++;
       }
+      if (opts.onProgress) opts.onProgress(`Completed batch ${bIdx} of ${bTot} (${llmUpdated} refined)`, pct, feedArr);
     }
 
     return { updated: Math.max(updated, llmUpdated), source: `Hybrid (${cfg.provider})` };
@@ -6184,7 +6434,11 @@
       repEl.innerHTML = `⏳ <strong>Gemini PDF Check:</strong> Analyzing ${entries.length} extracted entry(ies) before pushing to your ledger…`;
     }
     if (chkBtn) { chkBtn.disabled = true; chkBtn.textContent = "Checking PDF…"; }
-    showPdfProgress("✨ Gemini AI is Reading PDF...", `Analyzing ${entries.length} extracted entry(ies) before pushing to your ledger…`);
+    showPdfProgress("✨ Gemini AI is Reading PDF...", `Sending ${Math.min(entries.length, 80)} sample(s) of ${entries.length} entries to Gemini...`, {
+      percent: 25,
+      stats: `Checking ${entries.length} extracted entry(ies)...`,
+      feed: entries.slice(0, 5).map((e) => `${String(e.date || "").slice(0, 10)} • ${e.payee} • ${fmtMoney(e.amount)}`)
+    });
 
     try {
       const catIds = (state.categories || []).map((c) => `${c.id} (${c.type})`).join(", ");
@@ -6206,6 +6460,7 @@
         "- Only include entries in fixes[] that actually need cleaner payee/category/type correction.\n" +
         (aiCfg.customPrompt ? `User rules: ${aiCfg.customPrompt}\n` : "");
 
+      updatePdfProgress({ sub: "Waiting for Gemini AI statement audit response...", percent: 55 });
       const gRes = await callGeminiWithFallback({
         systemInstruction: { parts: [{ text: auditPrompt }] },
         contents: [{
@@ -6222,6 +6477,7 @@
         generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
       }, aiCfg);
 
+      updatePdfProgress({ sub: "Applying Gemini refinements to preview table...", percent: 88 });
       const cleaned = String(gRes.text || "").replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
       const sIdx = cleaned.indexOf("{");
       const eIdx = cleaned.lastIndexOf("}");
@@ -6230,6 +6486,7 @@
       const overrides = new Map();
       const validCatSet = new Set((state.categories || []).map((c) => c.id));
       let fixCount = 0;
+      const fixFeed = [];
       if (Array.isArray(obj.fixes)) {
         for (const f of obj.fixes) {
           const seqNum = Number(f?.seq);
@@ -6242,12 +6499,19 @@
           if (Object.keys(patch).length) {
             overrides.set(seqNum, patch);
             fixCount++;
+            if (fixFeed.length < 6) fixFeed.push(`#${seqNum}: ${patch.payee || ""} ${patch.category ? "→ " + patch.category : ""}`.trim());
           }
         }
       }
       csvParsedState.aiOverrides = overrides;
       const warnings = Array.isArray(obj.warnings) ? obj.warnings.filter(Boolean) : [];
       csvParsedState.geminiAudit = { model: gRes.model, summary: obj.summary || "", warnings, fixCount };
+      updatePdfProgress({
+        sub: `Done! Verified via ${gRes.model}`,
+        percent: 100,
+        stats: `${entries.length} checked • ${fixCount} refined`,
+        feed: fixFeed
+      });
       refreshCSVPreview();
       if (repEl) {
         const warnHtml = warnings.length
@@ -6817,100 +7081,130 @@
     const skipDupes = document.getElementById("csv-skip-dupes").checked;
     const syncOpening = document.getElementById("csv-sync-opening")?.checked;
     const accId = document.getElementById("csv-target-account").value;
-    const { entries, openingBalance } = buildStatementEntriesFromState();
-    const { existingRefSet, existingSigCounts } = buildExistingDuplicateIndex();
-    const seenBatch = new Map();
+    showPdfProgress("📥 Entering Statement Transactions...", "Preparing duplicate index & ledger matching...", {
+      percent: 10,
+      stats: "Initializing..."
+    });
 
-    const hadExistingTx = (state.transactions || []).some((t) => t.accountId === accId);
-    const targetAcc = (state.accounts || []).find((a) => a.id === accId);
-    const prevInitBal = targetAcc ? (Number(targetAcc.initialBalance) || 0) : 0;
-    const batchId = uid("imp");
+    try {
+      await yieldToUi();
+      const { entries, openingBalance } = buildStatementEntriesFromState();
+      const { existingRefSet, existingSigCounts } = buildExistingDuplicateIndex();
+      const ledgerCache = buildLedgerMatchCache();
+      const seenBatch = new Map();
 
-    let imported = 0, skipped = 0;
-    let impDebit = 0, impCredit = 0;
-    const toInsert = [];
-    for (const e of entries) {
-      const dupe = isEntryDuplicate(e, existingRefSet, existingSigCounts, seenBatch);
-      if (dupe && skipDupes) { skipped++; continue; }
-      e.importId = batchId;
-      autoAssignLedgerForTx(e, e.notes || "", true);
-      if (e.type === "expense") impDebit += Number(e.amount) || 0;
-      else if (e.type === "income") impCredit += Number(e.amount) || 0;
-      toInsert.push(e);
-      imported++;
-    }
+      const hadExistingTx = (state.transactions || []).some((t) => t.accountId === accId);
+      const targetAcc = (state.accounts || []).find((a) => a.id === accId);
+      const prevInitBal = targetAcc ? (Number(targetAcc.initialBalance) || 0) : 0;
+      const batchId = uid("imp");
 
-    let earliestDate = "", latestDate = "";
-    if (toInsert.length) {
-      // Insert newest-first so Transactions view shows most recent first while oldest-first seq/dates remain exact
-      state.transactions = [...toInsert.slice().reverse(), ...state.transactions];
-      latestDate = toInsert.reduce((mx, t) => t.date > mx ? t.date : mx, "");
-      if (latestDate) selectedMonthKey = getMonthKey(latestDate);
-      earliestDate = toInsert.reduce((mn, t) => !mn || t.date < mn ? t.date : mn, "");
-      if (earliestDate && latestDate) {
-        customPeriodStart = earliestDate.slice(0, 10);
-        customPeriodEnd = latestDate.slice(0, 10);
-      }
-    }
+      let imported = 0, skipped = 0;
+      let impDebit = 0, impCredit = 0;
+      const toInsert = [];
+      const feedBuf = [];
+      const totalEntries = entries.length;
 
-    if (syncOpening && targetAcc) {
-      // Pick chronologically latest transaction with a bankBalance across both saved and newly parsed rows
-      let bestTx = null;
-      for (const t of [...(state.transactions || []), ...entries]) {
-        if (t.accountId !== accId || typeof t.bankBalance !== "number") continue;
-        if (!bestTx || t.date > bestTx.date || (t.date === bestTx.date && (t.seq || 0) > (bestTx.seq || 0))) {
-          bestTx = t;
+      for (let idx = 0; idx < totalEntries; idx++) {
+        const e = entries[idx];
+        const dupe = isEntryDuplicate(e, existingRefSet, existingSigCounts, seenBatch);
+        if (dupe && skipDupes) { skipped++; }
+        else {
+          e.importId = batchId;
+          autoAssignLedgerForTx(e, e.notes || "", true, ledgerCache);
+          if (e.type === "expense") impDebit += Number(e.amount) || 0;
+          else if (e.type === "income") impCredit += Number(e.amount) || 0;
+          toInsert.push(e);
+          imported++;
+          feedBuf.push(`${String(e.date || "").slice(0, 10)} • ${e.payee} • ${e.type === "income" ? "+" : "-"}${fmtMoney(e.amount)}`);
+          if (feedBuf.length > 6) feedBuf.shift();
+        }
+        if (idx % 200 === 199 || idx === totalEntries - 1) {
+          const pct = totalEntries ? Math.round(12 + 78 * (idx + 1) / totalEntries) : 90;
+          updatePdfProgress({
+            sub: `Matching duplicates & party ledgers...`,
+            percent: pct,
+            stats: `${idx + 1} / ${totalEntries} processed • ${imported} new, ${skipped} skipped`,
+            feed: feedBuf
+          });
+          await yieldToUi();
         }
       }
-      if (bestTx) {
-        let netTx = 0;
-        for (const t of state.transactions || []) {
-          const v = convertToBase(t.amount, t.currency);
-          if (t.type === "income" && t.accountId === accId) netTx += v;
-          else if (t.type === "expense" && t.accountId === accId) netTx -= v;
-          else if (t.type === "transfer") {
-            if (t.accountId === accId) netTx -= v;
-            if (t.toAccountId === accId) netTx += v;
+
+      let earliestDate = "", latestDate = "";
+      if (toInsert.length) {
+        updatePdfProgress({ sub: `Saving ${toInsert.length} entry(ies) into ledger...`, percent: 94 });
+        await yieldToUi();
+        state.transactions = [...toInsert.slice().reverse(), ...state.transactions];
+        latestDate = toInsert.reduce((mx, t) => t.date > mx ? t.date : mx, "");
+        if (latestDate) selectedMonthKey = getMonthKey(latestDate);
+        earliestDate = toInsert.reduce((mn, t) => !mn || t.date < mn ? t.date : mn, "");
+        if (earliestDate && latestDate) {
+          customPeriodStart = earliestDate.slice(0, 10);
+          customPeriodEnd = latestDate.slice(0, 10);
+        }
+      }
+
+      if (syncOpening && targetAcc) {
+        let bestTx = null;
+        for (const t of [...(state.transactions || []), ...entries]) {
+          if (t.accountId !== accId || typeof t.bankBalance !== "number") continue;
+          if (!bestTx || t.date > bestTx.date || (t.date === bestTx.date && (t.seq || 0) > (bestTx.seq || 0))) {
+            bestTx = t;
           }
         }
-        targetAcc.initialBalance = Math.round((bestTx.bankBalance - netTx) * 100) / 100;
-      } else if (openingBalance !== null && !hadExistingTx) {
-        targetAcc.initialBalance = openingBalance;
+        if (bestTx) {
+          let netTx = 0;
+          for (const t of state.transactions || []) {
+            const v = convertToBase(t.amount, t.currency);
+            if (t.type === "income" && t.accountId === accId) netTx += v;
+            else if (t.type === "expense" && t.accountId === accId) netTx -= v;
+            else if (t.type === "transfer") {
+              if (t.accountId === accId) netTx -= v;
+              if (t.toAccountId === accId) netTx += v;
+            }
+          }
+          targetAcc.initialBalance = Math.round((bestTx.bankBalance - netTx) * 100) / 100;
+        } else if (openingBalance !== null && !hadExistingTx) {
+          targetAcc.initialBalance = openingBalance;
+        }
       }
-    }
 
-    if (imported > 0) {
-      if (!Array.isArray(state.importLogs)) state.importLogs = [];
-      state.importLogs.unshift({
-        id: batchId,
-        fileName: csvParsedState.meta?.fileName || csvParsedState.meta?.bank || "Bank Statement",
-        format: csvParsedState.meta?.format || "",
-        bankMeta: csvParsedState.meta?.bank || "",
-        accountId: accId,
-        accountName: targetAcc ? formatAccountLabel(targetAcc) : "Account",
-        importedAt: new Date().toISOString(),
-        importedCount: imported,
-        skippedDupes: skipped,
-        totalDebit: Math.round(impDebit * 100) / 100,
-        totalCredit: Math.round(impCredit * 100) / 100,
-        dateFrom: earliestDate ? earliestDate.slice(0, 10) : "",
-        dateTo: latestDate ? latestDate.slice(0, 10) : "",
-        balanceSynced: !!syncOpening,
-        prevInitialBalance: prevInitBal,
-        newInitialBalance: targetAcc ? targetAcc.initialBalance : prevInitBal
-      });
-    }
+      if (imported > 0) {
+        if (!Array.isArray(state.importLogs)) state.importLogs = [];
+        state.importLogs.unshift({
+          id: batchId,
+          fileName: csvParsedState.meta?.fileName || csvParsedState.meta?.bank || "Bank Statement",
+          format: csvParsedState.meta?.format || "",
+          bankMeta: csvParsedState.meta?.bank || "",
+          accountId: accId,
+          accountName: targetAcc ? formatAccountLabel(targetAcc) : "Account",
+          importedAt: new Date().toISOString(),
+          importedCount: imported,
+          skippedDupes: skipped,
+          totalDebit: Math.round(impDebit * 100) / 100,
+          totalCredit: Math.round(impCredit * 100) / 100,
+          dateFrom: earliestDate ? earliestDate.slice(0, 10) : "",
+          dateTo: latestDate ? latestDate.slice(0, 10) : "",
+          balanceSynced: !!syncOpening,
+          prevInitialBalance: prevInitBal,
+          newInitialBalance: targetAcc ? targetAcc.initialBalance : prevInitBal
+        });
+      }
 
-    if (toInsert.length || syncOpening) {
-      saveState();
+      if (toInsert.length || syncOpening) {
+        updatePdfProgress({ sub: "Persisting vault snapshot...", percent: 98 });
+        await saveState();
+      }
+      closeModal("csv-modal");
+      if (imported > 0) {
+        selectedLedgerId = "bank_all";
+        ledgerAccountFilter = accId || "all";
+      }
+      switchView(imported > 0 ? "ledgers" : currentView);
+      toast(`Auto-entered ${imported} bank entry(ies)${skipped ? `, skipped ${skipped} already-fed overlap(s)` : ""}.`);
+    } finally {
+      hidePdfProgress();
     }
-    closeModal("csv-modal");
-    if (imported > 0) {
-      selectedLedgerId = "bank_all";
-      ledgerAccountFilter = accId || "all";
-    }
-    switchView(imported > 0 ? "ledgers" : currentView);
-    toast(`Auto-entered ${imported} bank entry(ies)${skipped ? `, skipped ${skipped} already-fed overlap(s)` : ""}.`);
   }
 
   /* ---------- Local PDF + Unstructured / Upside-Down Statement Engine ---------- */
@@ -7265,8 +7559,14 @@
     const isPdf = mime === "application/pdf" || ext === "pdf";
 
     if (isPdf) {
+      let handedOffToModal = false;
       try {
-        showPdfProgress("📄 Reading PDF Statement...", `Loading "${file.name}"...`);
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        showPdfProgress("📄 Reading PDF Statement...", `Loading "${file.name}" (${sizeMb} MB)...`, {
+          percent: 3,
+          stats: "Encoding file for local parser..."
+        });
+        await yieldToUi();
         const dataUrl = await readAsDataUrl(file);
         pendingUploadFile = { file, dataUrl };
         if (isDesktopHost) {
@@ -7277,12 +7577,24 @@
             setTimeout(() => pwInput.focus(), 40);
             return;
           }
-          const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-          updatePdfProgress(`Extracting transactions locally from "${file.name}" (${sizeMb} MB). Large statements (100-300+ pages) may take 15-45 seconds...`);
-          const res = await apiFetch("/api/parse-statement", {
-            method: "POST",
-            body: JSON.stringify({ fileName: file.name, base64: dataUrl, password: chosenPw })
+          updatePdfProgress({
+            sub: `Reading "${file.name}" (${sizeMb} MB) locally...`,
+            percent: 5,
+            stats: "Indexing PDF structure..."
           });
+          const res = await parseStatementWithLiveProgress(
+            { fileName: file.name, base64: dataUrl, password: chosenPw },
+            (st) => {
+              const pgTxt = st.totalPages > 0 ? `Page ${st.currentPage} / ${st.totalPages}` : "Scanning PDF...";
+              const txTxt = st.txCount > 0 ? ` • ${st.txCount} row(s) detected` : "";
+              updatePdfProgress({
+                sub: st.stage || `Reading "${file.name}"...`,
+                percent: typeof st.percent === "number" ? st.percent : 15,
+                stats: `${pgTxt}${txTxt}`,
+                feed: Array.isArray(st.recentTx) ? st.recentTx : undefined
+              });
+            }
+          );
           if (res && !res.ok && res.needsPassword) {
             hidePdfProgress();
             if (protChk) protChk.checked = true;
@@ -7295,7 +7607,15 @@
             return;
           }
           if (res && res.ok && Array.isArray(res.rows) && res.rows.length > 0) {
+            const totalRows = res.rows.length;
+            updatePdfProgress({
+              sub: "Categorizing & preparing extracted transactions...",
+              percent: 96,
+              stats: `${totalRows} row(s) extracted • Rendering table...`
+            });
+            await yieldToUi();
             hidePdfProgress();
+            handedOffToModal = true;
             pwBox.classList.add("hidden");
             const doExport = exportOnly || pendingExportOnly;
             pendingExportOnly = false;
@@ -7321,9 +7641,10 @@
           // If scanned PDF and external AI is configured, fall back to AI Vision/PDF OCR
           const aiCfg = state.settings.aiConfig || {};
           if (aiCfg.provider && aiCfg.provider !== "none" && aiCfg.mode !== "local") {
-            updatePdfProgress("Scanned PDF detected — reading via Vision AI...", "🧠 AI is Reading Scanned PDF...");
+            updatePdfProgress({ title: "🧠 AI is Reading Scanned PDF...", sub: "Scanned PDF detected — extracting transactions via Vision AI...", percent: 45, stats: "Running Vision OCR..." });
             const ocrRes = await extractStatementViaOcrAi({ rawText: "", dataUrl, mimeType: "application/pdf", fileName: file.name });
             hidePdfProgress();
+            handedOffToModal = true;
             const meta = extractBankMeta(ocrRes.rows);
             meta.viaOcr = true;
             meta.fileName = file.name;
@@ -7335,7 +7656,7 @@
         }
 
         // Browser preview fallback (no native host): decompress PDF locally in JS
-        updatePdfProgress(`Extracting text from "${file.name}" in browser...`);
+        updatePdfProgress({ sub: `Extracting text from "${file.name}" in browser...`, percent: 35, stats: "Reading browser stream..." });
         const buf = await file.arrayBuffer();
         const rawLatin = new TextDecoder("latin1").decode(new Uint8Array(buf));
         if (/\/Encrypt\s+(\d+\s+\d+\s+R|<<)/.test(rawLatin)) {
@@ -7345,6 +7666,7 @@
         const offlineRows = parseUnstructuredStatementText(localText);
         if (offlineRows.length > 1) {
           hidePdfProgress();
+          handedOffToModal = true;
           const meta = extractBankMeta(offlineRows);
           meta.fileName = file.name;
           meta.format = "pdf";
@@ -7353,9 +7675,10 @@
         }
         const aiCfg = state.settings.aiConfig || {};
         if (aiCfg.provider && aiCfg.provider !== "none" && aiCfg.mode !== "local") {
-          updatePdfProgress("Analyzing extracted text with AI...", "✨ AI is Reading PDF...");
+          updatePdfProgress({ title: "✨ AI is Reading PDF...", sub: "Analyzing extracted text with AI...", percent: 65, stats: "AI OCR..." });
           const ocrRes = await extractStatementViaOcrAi({ rawText: localText, dataUrl, mimeType: "application/pdf", fileName: file.name });
           hidePdfProgress();
+          handedOffToModal = true;
           const meta = extractBankMeta(ocrRes.rows);
           meta.viaOcr = true;
           meta.fileName = file.name;
@@ -7367,7 +7690,7 @@
       } catch (err) {
         toast("PDF import error: " + err.message);
       } finally {
-        hidePdfProgress();
+        if (!handedOffToModal) hidePdfProgress();
       }
       return;
     }
@@ -7394,6 +7717,7 @@
     }
 
     if (isDesktopHost) {
+      let handedOffToModal = false;
       try {
         const dataUrl = await readAsDataUrl(file);
         pendingUploadFile = { file, dataUrl };
@@ -7403,12 +7727,14 @@
           setTimeout(() => pwInput.focus(), 40);
           return;
         }
-        const res = await apiFetch("/api/parse-statement", {
-          method: "POST",
-          body: JSON.stringify({ fileName: file.name, base64: dataUrl, password: chosenPw })
-        });
+        showPdfProgress("📊 Reading Excel / Spreadsheet...", `Parsing "${file.name}"...`, { percent: 25, stats: "Decoding workbook..." });
+        const res = await parseStatementWithLiveProgress(
+          { fileName: file.name, base64: dataUrl, password: chosenPw },
+          (st) => updatePdfProgress({ sub: st.stage || `Reading "${file.name}"...`, percent: typeof st.percent === "number" ? st.percent : 50 })
+        );
         if (!res.ok) {
           if (res.needsPassword) {
+            hidePdfProgress();
             if (protChk) protChk.checked = true;
             pwBox.classList.remove("hidden");
             document.getElementById("stmt-pw-desc").textContent = chosenPw
@@ -7429,8 +7755,10 @@
         const hIdx = detectHeaderRowIndex(parsedRows);
         if (parsedRows.length >= 2 && hIdx < 0) {
           try {
-            toast("🧠 Non-standard statement format detected — normalizing...");
+            updatePdfProgress({ title: "🧠 Normalizing Non-Standard Format...", sub: "Analyzing layout with AI...", percent: 70 });
             const ocrRes = await extractStatementViaOcrAi({ rows: parsedRows, fileName: file.name });
+            hidePdfProgress();
+            handedOffToModal = true;
             const oMeta = extractBankMeta(parsedRows);
             oMeta.viaOcr = true;
             oMeta.fileName = file.name;
@@ -7440,12 +7768,16 @@
           } catch (_) {}
         }
 
+        hidePdfProgress();
+        handedOffToModal = true;
         const meta = extractBankMeta(parsedRows);
         meta.fileName = file.name;
         meta.format = res.format || ext;
         loadRowsIntoStatementModal(parsedRows, meta, doExport);
       } catch (err) {
         toast("Upload failed: " + err.message);
+      } finally {
+        if (!handedOffToModal) hidePdfProgress();
       }
     } else {
       if (ext === "xlsx" || ext === "xls") {
@@ -7476,16 +7808,27 @@
     }
   }
 
-  function exportTransactionsCSV(list) {
-    const header = ["Date", "Type", "Payee", "Category", "Account", "Amount", "Currency", "BaseAmount", "Method", "TaxDeductible", "Tags", "Notes"];
-    const escCsv = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = list.map((t) => [
-      t.date, t.type, t.payee, getCat(t.category).name, getAcc(t.accountId).name,
-      t.amount, t.currency, txBaseAmount(t).toFixed(2), t.method || "", t.taxDeductible ? "Yes" : "No",
-      (t.tags || []).join(";"), t.notes || ""
-    ].map(escCsv).join(","));
-    downloadFile(`ledgerflow-transactions-${todayISO()}.csv`, "\uFEFF" + [header.join(","), ...rows].join("\n"), "text/csv;charset=utf-8;");
-    toast("CSV exported.");
+  async function exportTransactionsCSV(list) {
+    const items = list || [];
+    const showDlg = items.length > 300;
+    if (showDlg) {
+      showPdfProgress("📤 Generating CSV Export...", `Formatting ${items.length} transaction(s)...`, { percent: 25, stats: `0 / ${items.length}` });
+      await yieldToUi();
+    }
+    try {
+      const header = ["Date", "Type", "Payee", "Category", "Account", "Amount", "Currency", "BaseAmount", "Method", "TaxDeductible", "Tags", "Notes"];
+      const escCsv = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const rows = items.map((t) => [
+        t.date, t.type, t.payee, getCat(t.category).name, getAcc(t.accountId).name,
+        t.amount, t.currency, txBaseAmount(t).toFixed(2), t.method || "", t.taxDeductible ? "Yes" : "No",
+        (t.tags || []).join(";"), t.notes || ""
+      ].map(escCsv).join(","));
+      if (showDlg) updatePdfProgress({ sub: "Writing CSV file...", percent: 95, stats: `${items.length} / ${items.length}` });
+      downloadFile(`ledgerflow-transactions-${todayISO()}.csv`, "\uFEFF" + [header.join(","), ...rows].join("\n"), "text/csv;charset=utf-8;");
+      toast("CSV exported.");
+    } finally {
+      if (showDlg) hidePdfProgress();
+    }
   }
 
   function downloadFile(filename, content, mime) {

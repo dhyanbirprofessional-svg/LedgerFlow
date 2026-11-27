@@ -20,6 +20,132 @@ namespace LedgerFlowHost {
             public List<List<string>> rows;
         }
 
+        public class ParseJobState {
+            public string jobId;
+            public volatile bool done;
+            public string phase = "queued";
+            public string stage = "Starting parser...";
+            public int currentPage;
+            public int totalPages;
+            public int percent;
+            public int txCount;
+            public readonly object Sync = new object();
+            public List<string> recentTx = new List<string>();
+            public ParseResult result;
+        }
+
+        private static readonly object JobLock = new object();
+        private static readonly Dictionary<string, ParseJobState> ParseJobs = new Dictionary<string, ParseJobState>();
+        private static long JobSeq = 0;
+
+        public static bool HasActiveJobs() {
+            lock (JobLock) {
+                foreach (var kv in ParseJobs) {
+                    if (!kv.Value.done) return true;
+                }
+                return false;
+            }
+        }
+
+        private static void UpdateJobProgress(ParseJobState job, string phase, string stage, int currentPage, int totalPages, int percent, int? txCount = null, IEnumerable<string> newSnippets = null) {
+            if (job == null) return;
+            lock (job.Sync) {
+                if (phase != null) job.phase = phase;
+                if (stage != null) job.stage = stage;
+                if (currentPage >= 0) job.currentPage = currentPage;
+                if (totalPages >= 0) job.totalPages = totalPages;
+                job.percent = Math.Max(0, Math.Min(100, percent));
+                if (txCount.HasValue) job.txCount = txCount.Value;
+                if (newSnippets != null) {
+                    foreach (string s in newSnippets) {
+                        if (string.IsNullOrEmpty(s)) continue;
+                        job.recentTx.Add(s);
+                        if (job.recentTx.Count > 6) job.recentTx.RemoveAt(0);
+                    }
+                }
+            }
+        }
+
+        public static string StartParseJob(string jsonBody) {
+            var serializer = new JavaScriptSerializer { MaxJsonLength = 128 * 1024 * 1024 };
+            string jobId = "job_" + System.Threading.Interlocked.Increment(ref JobSeq) + "_" + DateTime.UtcNow.Ticks;
+            var job = new ParseJobState { jobId = jobId, phase = "starting", stage = "Decoding uploaded file...", percent = 3 };
+            lock (JobLock) {
+                ParseJobs[jobId] = job;
+            }
+            var th = new System.Threading.Thread(() => {
+                try {
+                    Dictionary<string, object> req = serializer.Deserialize<Dictionary<string, object>>(jsonBody);
+                    string fileName = req.ContainsKey("fileName") && req["fileName"] != null ? req["fileName"].ToString() : "statement.xlsx";
+                    string base64 = req.ContainsKey("base64") && req["base64"] != null ? req["base64"].ToString() : "";
+                    string password = req.ContainsKey("password") && req["password"] != null ? req["password"].ToString() : "";
+                    if (string.IsNullOrEmpty(base64)) {
+                        job.result = new ParseResult { ok = false, error = "Empty file payload." };
+                    } else {
+                        int commaIdx = base64.IndexOf(',');
+                        if (commaIdx >= 0 && base64.Substring(0, commaIdx).Contains("base64")) {
+                            base64 = base64.Substring(commaIdx + 1);
+                        }
+                        byte[] bytes = Convert.FromBase64String(base64);
+                        base64 = null;
+                        job.result = ParseBytes(bytes, fileName, password, job);
+                    }
+                } catch (Exception ex) {
+                    job.result = new ParseResult { ok = false, error = "Parser error: " + ex.Message };
+                } finally {
+                    lock (job.Sync) {
+                        job.percent = 100;
+                        job.phase = (job.result != null && job.result.ok) ? "done" : "error";
+                        job.stage = (job.result != null && job.result.ok)
+                            ? string.Format("Completed! {0} row(s) ready.", job.result.rows != null ? job.result.rows.Count : 0)
+                            : (job.result != null ? job.result.error : "Failed");
+                        if (job.result != null && job.result.rows != null) {
+                            job.txCount = Math.Max(job.txCount, Math.Max(0, job.result.rows.Count - 1));
+                        }
+                        job.done = true;
+                    }
+                }
+            }) { IsBackground = true };
+            th.Start();
+            return serializer.Serialize(new Dictionary<string, object> { { "ok", true }, { "jobId", jobId } });
+        }
+
+        public static string GetParseJobStatusJson(string jobId) {
+            var serializer = new JavaScriptSerializer { MaxJsonLength = 128 * 1024 * 1024 };
+            ParseJobState job = null;
+            lock (JobLock) {
+                ParseJobs.TryGetValue(jobId ?? "", out job);
+            }
+            if (job == null) {
+                return serializer.Serialize(new Dictionary<string, object> { { "ok", false }, { "done", true }, { "error", "Parse job not found." } });
+            }
+            Dictionary<string, object> snap;
+            bool isDone;
+            lock (job.Sync) {
+                isDone = job.done;
+                snap = new Dictionary<string, object> {
+                    { "ok", true },
+                    { "done", job.done },
+                    { "phase", job.phase },
+                    { "stage", job.stage },
+                    { "currentPage", job.currentPage },
+                    { "totalPages", job.totalPages },
+                    { "percent", job.percent },
+                    { "txCount", job.txCount },
+                    { "recentTx", new List<string>(job.recentTx) }
+                };
+                if (job.done) {
+                    snap["result"] = job.result;
+                }
+            }
+            if (isDone) {
+                lock (JobLock) {
+                    ParseJobs.Remove(jobId);
+                }
+            }
+            return serializer.Serialize(snap);
+        }
+
         public static string HandleParseRequest(string jsonBody) {
             var serializer = new JavaScriptSerializer { MaxJsonLength = 128 * 1024 * 1024 };
             Dictionary<string, object> req;
@@ -48,18 +174,18 @@ namespace LedgerFlowHost {
                 return serializer.Serialize(new ParseResult { ok = false, error = "Failed to decode file: " + ex.Message });
             }
 
-            ParseResult result = ParseBytes(bytes, fileName, password);
+            ParseResult result = ParseBytes(bytes, fileName, password, null);
             return serializer.Serialize(result);
         }
 
-        public static ParseResult ParseBytes(byte[] bytes, string fileName, string password) {
+        public static ParseResult ParseBytes(byte[] bytes, string fileName, string password, ParseJobState job = null) {
             if (bytes == null || bytes.Length == 0) {
                 return new ParseResult { ok = false, error = "File is empty." };
             }
 
             // 0. Check PDF signature (%PDF-) -> Native local PDF text & table extractor
             if (IsPdfSignature(bytes)) {
-                return ParsePdfBytes(bytes, password);
+                return ParsePdfBytes(bytes, password, job);
             }
 
             // 1. Check ZIP signature (PK\x03\x04) -> .xlsx
@@ -1124,8 +1250,59 @@ namespace LedgerFlowHost {
             return false;
         }
 
-        private static ParseResult ParsePdfBytes(byte[] bytes, string password) {
+        private static readonly Regex SkipBinaryStreamRe = new Regex(@"(/Subtype\s*/(?:Image|CIDFontType0C|Type1C|OpenType)\b|/Length1\s+\d+\b)", RegexOptions.Compiled);
+        private static readonly Regex ObjStmTypeRe = new Regex(@"/Type\s*/ObjStm\b", RegexOptions.Compiled);
+        private static readonly Regex PageTypeRe = new Regex(@"/Type\s*/Page\b(?!s)", RegexOptions.Compiled);
+        private static readonly Regex PageResKeyRe = new Regex(@"(/Resources\s+\d+\s+\d+\s+R|/Resources\s*<<[^>]*>>|/Parent\s+\d+\s+\d+\s+R)", RegexOptions.Compiled);
+        private static readonly Regex LiveTxAmtOrDateRe = new Regex(@"(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{1,3}(?:,\d{2,3})*\.\d{2})", RegexOptions.Compiled);
+
+        private static List<string> ExtractPageLiveSnippets(List<PdfTextFrag> pageFrags, out int txHits) {
+            txHits = 0;
+            var snippets = new List<string>();
+            if (pageFrags == null || pageFrags.Count == 0) return snippets;
+            var lines = new List<List<PdfTextFrag>>();
+            var sorted = new List<PdfTextFrag>(pageFrags);
+            sorted.Sort((a, b) => {
+                int yc = b.Y.CompareTo(a.Y);
+                return yc != 0 ? yc : a.X.CompareTo(b.X);
+            });
+            foreach (var f in sorted) {
+                if (lines.Count > 0 && Math.Abs(lines[lines.Count - 1][0].Y - f.Y) <= 2.8) {
+                    lines[lines.Count - 1].Add(f);
+                } else {
+                    lines.Add(new List<PdfTextFrag> { f });
+                }
+            }
+            for (int li = 0; li < lines.Count; li++) {
+                var ln = lines[li];
+                ln.Sort((a, b) => a.X.CompareTo(b.X));
+                var sb = new StringBuilder();
+                for (int k = 0; k < ln.Count; k++) {
+                    string t = (ln[k].Text ?? "").Trim();
+                    if (t.Length == 0) continue;
+                    if (sb.Length > 0) sb.Append("  ");
+                    sb.Append(t);
+                    if (sb.Length > 92) break;
+                }
+                string text = Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+                if (text.Length < 10) continue;
+                string lower = text.ToLowerInvariant();
+                if (lower.Contains("page no") || lower.Contains("statement summary") || lower.Contains("please do not share")) continue;
+                if (LiveTxAmtOrDateRe.IsMatch(text)) {
+                    txHits++;
+                    if (text.Length > 88) text = text.Substring(0, 85) + "...";
+                    snippets.Add(text);
+                }
+            }
+            if (snippets.Count > 5) {
+                snippets = snippets.GetRange(snippets.Count - 5, 5);
+            }
+            return snippets;
+        }
+
+        private static ParseResult ParsePdfBytes(byte[] bytes, string password, ParseJobState job = null) {
             try {
+                UpdateJobProgress(job, "indexing", "Indexing PDF objects...", 0, 0, 5);
                 Encoding latin1 = Encoding.GetEncoding("ISO-8859-1");
                 string pdfStr = latin1.GetString(bytes);
 
@@ -1137,20 +1314,23 @@ namespace LedgerFlowHost {
                 var globalCMap = new PdfCMap();
                 var objCMaps = new Dictionary<int, PdfCMap>();
 
-                // Decrypt (if encrypted) & decompress text/font/objstm streams (skip images to save RAM on 300+ page PDFs)
+                // Decrypt (if encrypted) & decompress text/font/objstm streams (skip images & binary font programs to save RAM)
                 var objIds = new List<int>(objs.Keys);
-                foreach (int id in objIds) {
+                int totalObjs = objIds.Count;
+                for (int oi = 0; oi < totalObjs; oi++) {
+                    int id = objIds[oi];
                     PdfIndirectObj o = objs[id];
                     if (o.RawStream != null) {
-                        if (Regex.IsMatch(o.Dict ?? "", @"/Subtype\s*/Image\b")) {
+                        string oDict = o.Dict ?? "";
+                        if (SkipBinaryStreamRe.IsMatch(oDict)) {
                             o.RawStream = null;
                             continue;
                         }
-                        byte[] streamSrc = secCtx != null ? DecryptPdfObjectStream(o.RawStream, o.Id, o.Gen, o.Dict, secCtx) : o.RawStream;
-                        o.DecodedStream = DecodePdfStream(streamSrc, o.Dict);
+                        byte[] streamSrc = secCtx != null ? DecryptPdfObjectStream(o.RawStream, o.Id, o.Gen, oDict, secCtx) : o.RawStream;
+                        o.DecodedStream = DecodePdfStream(streamSrc, oDict);
                         o.RawStream = null;
                         if (o.DecodedStream != null && o.DecodedStream.Length > 0) {
-                            bool isObjStm = Regex.IsMatch(o.Dict ?? "", @"/Type\s*/ObjStm\b");
+                            bool isObjStm = ObjStmTypeRe.IsMatch(oDict);
                             if (o.DecodedStream.Length <= 512 * 1024) {
                                 string sText = latin1.GetString(o.DecodedStream);
                                 if (sText.Contains("beginbfchar") || sText.Contains("beginbfrange")) {
@@ -1160,10 +1340,14 @@ namespace LedgerFlowHost {
                                 }
                             }
                             if (isObjStm) {
-                                ExtractPdfObjStm(o.DecodedStream, o.Dict, objs);
+                                ExtractPdfObjStm(o.DecodedStream, oDict, objs);
                                 o.DecodedStream = null;
                             }
                         }
+                    }
+                    if (job != null && totalObjs > 0 && (oi % 100 == 0 || oi == totalObjs - 1)) {
+                        int decPct = 6 + (int)(10.0 * (oi + 1) / totalObjs);
+                        UpdateJobProgress(job, "decoding", "Decoding PDF streams & fonts...", 0, 0, decPct);
                     }
                 }
                 pdfStr = null;
@@ -1181,20 +1365,41 @@ namespace LedgerFlowHost {
                     sortedIds.Sort();
                     foreach (int id in sortedIds) {
                         PdfIndirectObj o = objs[id];
-                        if (Regex.IsMatch(o.Dict ?? "", @"/Type\s*/Page\b(?!s)")) {
+                        if (PageTypeRe.IsMatch(o.Dict ?? "")) {
                             pageObjs.Add(o);
                         }
                     }
                 }
 
                 var allFrags = new List<PdfTextFrag>();
+                var fontCache = new Dictionary<string, Dictionary<string, PdfCMap>>(StringComparer.Ordinal);
+                var xobjCache = new Dictionary<string, Dictionary<string, PdfIndirectObj>>(StringComparer.Ordinal);
                 int pageNum = 0;
+                int totalPages = pageObjs.Count;
+                int runningTxHits = 0;
 
                 if (pageObjs.Count > 0) {
+                    UpdateJobProgress(job, "reading", string.Format("Reading page 1 of {0}...", totalPages), 0, totalPages, 16, 0);
+                    var pageFrags = new List<PdfTextFrag>(256);
+                    var batchSnippets = new List<string>();
                     foreach (PdfIndirectObj page in pageObjs) {
                         pageNum++;
-                        var fontCMaps = ResolvePageFontCMaps(page, objs, objCMaps);
-                        var formXObjs = ResolvePageFormXObjects(page, objs);
+                        string cacheKey = null;
+                        string pDict = page.Dict ?? "";
+                        Match rkm = PageResKeyRe.Match(pDict);
+                        if (rkm.Success && !pDict.Contains("/Font <<") && !pDict.Contains("/XObject <<")) {
+                            cacheKey = rkm.Groups[1].Value;
+                        }
+                        Dictionary<string, PdfCMap> fontCMaps;
+                        if (cacheKey == null || !fontCache.TryGetValue(cacheKey, out fontCMaps)) {
+                            fontCMaps = ResolvePageFontCMaps(page, objs, objCMaps);
+                            if (cacheKey != null) fontCache[cacheKey] = fontCMaps;
+                        }
+                        Dictionary<string, PdfIndirectObj> formXObjs;
+                        if (cacheKey == null || !xobjCache.TryGetValue(cacheKey, out formXObjs)) {
+                            formXObjs = ResolvePageFormXObjects(page, objs);
+                            if (cacheKey != null) xobjCache[cacheKey] = formXObjs;
+                        }
                         var contentIds = ExtractPdfContentRefs(page.Dict, objs);
                         var combined = new MemoryStream();
                         foreach (int cid in contentIds) {
@@ -1205,8 +1410,37 @@ namespace LedgerFlowHost {
                             }
                         }
                         byte[] pageBytes = combined.ToArray();
+                        pageFrags.Clear();
                         if (pageBytes.Length > 0) {
-                            ExtractPdfContentText(pageBytes, pageNum, objs, objCMaps, fontCMaps, globalCMap, formXObjs, null, allFrags, 0);
+                            ExtractPdfContentText(pageBytes, pageNum, objs, objCMaps, fontCMaps, globalCMap, formXObjs, null, pageFrags, 0);
+                            if (pageFrags.Count > 0) {
+                                allFrags.AddRange(pageFrags);
+                                if (job != null) {
+                                    int hits;
+                                    var snips = ExtractPageLiveSnippets(pageFrags, out hits);
+                                    runningTxHits += hits;
+                                    if (snips.Count > 0) {
+                                        batchSnippets.AddRange(snips);
+                                        if (batchSnippets.Count > 6) {
+                                            batchSnippets = batchSnippets.GetRange(batchSnippets.Count - 6, 6);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (job != null && (pageNum == 1 || pageNum == totalPages || pageNum % 2 == 0)) {
+                            int pct = 16 + (int)(70.0 * pageNum / Math.Max(1, totalPages));
+                            UpdateJobProgress(
+                                job,
+                                "reading",
+                                string.Format("Reading page {0} of {1}...", pageNum, totalPages),
+                                pageNum,
+                                totalPages,
+                                pct,
+                                runningTxHits,
+                                batchSnippets
+                            );
+                            batchSnippets.Clear();
                         }
                     }
                 } else {
@@ -1220,13 +1454,17 @@ namespace LedgerFlowHost {
                         string head = latin1.GetString(o.DecodedStream, 0, Math.Min(512, o.DecodedStream.Length));
                         if (head.Contains("BT") || head.Contains("Tj") || head.Contains("TJ")) {
                             pageNum++;
-                            ExtractPdfContentText(o.DecodedStream, pageNum, objs, objCMaps, new Dictionary<string, PdfCMap>(), globalCMap, null, null, allFrags, 0);
+                            var pageFrags = new List<PdfTextFrag>();
+                            ExtractPdfContentText(o.DecodedStream, pageNum, objs, objCMaps, new Dictionary<string, PdfCMap>(), globalCMap, null, null, pageFrags, 0);
+                            if (pageFrags.Count > 0) allFrags.AddRange(pageFrags);
                         }
                     }
                 }
 
                 objs.Clear();
                 objCMaps.Clear();
+                fontCache.Clear();
+                xobjCache.Clear();
                 if (allFrags.Count == 0) {
                     return new ParseResult {
                         ok = false,
@@ -1235,7 +1473,9 @@ namespace LedgerFlowHost {
                     };
                 }
 
+                UpdateJobProgress(job, "building", string.Format("Aligning columns across {0} page(s)...", Math.Max(1, totalPages)), totalPages, totalPages, 90, runningTxHits);
                 var rows = BuildPdfTableRows(allFrags);
+                allFrags.Clear();
                 if (rows.Count == 0) {
                     return new ParseResult {
                         ok = false,
@@ -1243,6 +1483,7 @@ namespace LedgerFlowHost {
                         error = "Could not extract readable transaction rows from this PDF."
                     };
                 }
+                UpdateJobProgress(job, "done", string.Format("Extracted {0} row(s) from {1} page(s).", rows.Count, Math.Max(1, totalPages)), totalPages, totalPages, 98, Math.Max(0, rows.Count - 1));
                 return new ParseResult { ok = true, format = "pdf", rows = rows };
             } catch (Exception ex) {
                 return new ParseResult { ok = false, format = "pdf", error = "Failed to parse PDF locally: " + ex.Message };
@@ -1271,7 +1512,7 @@ namespace LedgerFlowHost {
                 for (int i = bodyStart; i < scanLim - 1; i++) {
                     char c = pdfStr[i];
                     if (c == '<' && pdfStr[i + 1] == '<') { dictStart = i; break; }
-                    if (c == 's' && i + 6 <= scanLim && pdfStr.Substring(i, 6) == "stream") break;
+                    if (c == 's' && i + 6 <= scanLim && string.CompareOrdinal(pdfStr, i, "stream", 0, 6) == 0) break;
                 }
                 if (dictStart >= 0) {
                     int depth = 0;

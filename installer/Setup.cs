@@ -14,7 +14,7 @@ using Microsoft.Win32;
 namespace LedgerFlowSetup {
     static class Program {
         private const string AppName = "LedgerFlow";
-        private const string AppVersion = "1.0.5";
+        private const string AppVersion = "1.0.6";
         private const string Publisher = "LedgerFlow Software";
         private const string UninstallRegPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\LedgerFlow";
 
@@ -47,6 +47,14 @@ namespace LedgerFlowSetup {
                 try {
                     PerformInstall(target, !skipSystemIntegration, !skipSystemIntegration, !skipSystemIntegration, null);
                     if (relaunch) {
+                        foreach (var mp in Process.GetProcessesByName("msedge")) {
+                            try {
+                                if (!string.IsNullOrEmpty(mp.MainWindowTitle) && mp.MainWindowTitle.StartsWith("LedgerFlow", StringComparison.OrdinalIgnoreCase)) {
+                                    mp.CloseMainWindow();
+                                }
+                            } catch { }
+                        }
+                        Thread.Sleep(500);
                         string exe = Path.Combine(target, "LedgerFlow.exe");
                         if (File.Exists(exe)) {
                             Process.Start(new ProcessStartInfo { FileName = exe, WorkingDirectory = target, UseShellExecute = true });

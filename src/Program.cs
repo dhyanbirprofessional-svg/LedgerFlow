@@ -35,6 +35,7 @@ namespace LedgerFlowHost {
         private static volatile bool ShuttingDown = false;
         private static DateTime LastPingUtc = DateTime.UtcNow;
         private static bool ClientEverConnected = false;
+        private static int ActiveRequests = 0;
         private static Process EdgeProcess;
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -90,6 +91,10 @@ namespace LedgerFlowHost {
                     if (ShuttingDown) {
                         watchTimer.Stop();
                         Application.ExitThread();
+                        return;
+                    }
+                    if (Interlocked.CompareExchange(ref ActiveRequests, 0, 0) > 0 || StatementParser.HasActiveJobs()) {
+                        LastPingUtc = DateTime.UtcNow;
                         return;
                     }
                     if (EdgeProcess != null && EdgeProcess.HasExited) {
@@ -310,7 +315,13 @@ namespace LedgerFlowHost {
                             query = rawUrl.Substring(qIdx + 1);
                         }
 
-                        RouteRequest(ns, method, path, query, headers, bodyBytes);
+                        Interlocked.Increment(ref ActiveRequests);
+                        try {
+                            RouteRequest(ns, method, path, query, headers, bodyBytes);
+                        } finally {
+                            Interlocked.Decrement(ref ActiveRequests);
+                            LastPingUtc = DateTime.UtcNow;
+                        }
                     }
                 } catch { }
             }
@@ -410,6 +421,24 @@ namespace LedgerFlowHost {
                 return;
             }
 
+            if (path == "/api/parse-statement-start" && method == "POST") {
+                ClientEverConnected = true;
+                LastPingUtc = DateTime.UtcNow;
+                string body = Encoding.UTF8.GetString(bodyBytes).Trim();
+                string resp = StatementParser.StartParseJob(body);
+                SendJson(ns, 200, resp);
+                return;
+            }
+
+            if (path == "/api/parse-statement-status" && method == "GET") {
+                ClientEverConnected = true;
+                LastPingUtc = DateTime.UtcNow;
+                string jobId = GetQueryParam(query, "job") ?? "";
+                string resp = StatementParser.GetParseJobStatusJson(jobId);
+                SendJson(ns, 200, resp);
+                return;
+            }
+
             if (path == "/api/biometric-status" && method == "GET") {
                 bool avail = false;
                 string statusText = CheckWindowsHelloStatus(out avail);
@@ -453,6 +482,13 @@ namespace LedgerFlowHost {
                 LastPingUtc = DateTime.UtcNow;
                 string body = Encoding.UTF8.GetString(bodyBytes).Trim();
                 SendJson(ns, 200, DownloadAndRunWindowsUpdate(body));
+                return;
+            }
+
+            if (path == "/api/apply-update-restart" && method == "POST") {
+                ClientEverConnected = true;
+                LastPingUtc = DateTime.UtcNow;
+                SendJson(ns, 200, ApplyUpdateAndRestartWindows());
                 return;
             }
 
@@ -629,6 +665,23 @@ namespace LedgerFlowHost {
                 if (!string.IsNullOrEmpty(ghToken)) wc.Headers.Add("Authorization", "Bearer " + ghToken);
                 wc.DownloadFile(uri, tmpExe);
 
+                return ser.Serialize(new Dictionary<string, object> {
+                    { "ok", true },
+                    { "readyToRestart", true },
+                    { "installerPath", tmpExe }
+                });
+            } catch (Exception ex) {
+                return ser.Serialize(new Dictionary<string, object> { { "ok", false }, { "error", ex.Message } });
+            }
+        }
+
+        static string ApplyUpdateAndRestartWindows() {
+            var ser = new JavaScriptSerializer();
+            try {
+                string tmpExe = Path.Combine(Path.GetTempPath(), "LedgerFlow-Setup-Update.exe");
+                if (!File.Exists(tmpExe)) {
+                    return ser.Serialize(new Dictionary<string, object> { { "ok", false }, { "error", "Update installer package not found. Please retry." } });
+                }
                 string installDir = Path.GetDirectoryName(Application.ExecutablePath);
                 Process.Start(new ProcessStartInfo {
                     FileName = tmpExe,
@@ -636,13 +689,31 @@ namespace LedgerFlowHost {
                     UseShellExecute = true
                 });
                 ThreadPool.QueueUserWorkItem(_ => {
-                    Thread.Sleep(500);
+                    Thread.Sleep(250);
+                    CloseAppWindowsForRestart();
                     QuitApp();
                 });
                 return ser.Serialize(new Dictionary<string, object> { { "ok", true } });
             } catch (Exception ex) {
                 return ser.Serialize(new Dictionary<string, object> { { "ok", false }, { "error", ex.Message } });
             }
+        }
+
+        static void CloseAppWindowsForRestart() {
+            try {
+                if (EdgeProcess != null && !EdgeProcess.HasExited) {
+                    EdgeProcess.CloseMainWindow();
+                }
+            } catch { }
+            try {
+                foreach (var p in Process.GetProcessesByName("msedge")) {
+                    try {
+                        if (!string.IsNullOrEmpty(p.MainWindowTitle) && p.MainWindowTitle.StartsWith("LedgerFlow", StringComparison.OrdinalIgnoreCase)) {
+                            p.CloseMainWindow();
+                        }
+                    } catch { }
+                }
+            } catch { }
         }
 
         static bool CheckInternetReachable() {

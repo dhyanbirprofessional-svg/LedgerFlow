@@ -725,14 +725,32 @@ input:focus, select:focus, textarea:focus {
   animation: lfSpin 0.85s linear infinite;
 }
 .lf-progress-track {
-  width: 100%; height: 6px; border-radius: 999px;
+  width: 100%; height: 8px; border-radius: 999px;
   background: var(--surface-2); overflow: hidden;
   border: 1px solid var(--border);
 }
-.lf-progress-bar {
-  width: 42%; height: 100%; border-radius: 999px;
+.lf-progress-fill {
+  height: 100%; width: 0%; border-radius: 999px;
   background: linear-gradient(90deg, var(--primary), var(--emerald));
-  animation: lfProgressSlide 1.35s ease-in-out infinite;
+  transition: width 0.22s ease;
+}
+.lf-progress-feed {
+  margin-top: 12px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); text-align: left;
+  max-height: 165px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 11.5px; line-height: 1.35;
+}
+.lf-progress-feed-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lf-progress-feed-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--emerald); flex-shrink: 0;
 }
 @keyframes lfSpin { to { transform: rotate(360deg); } }
 @keyframes lfProgressSlide {

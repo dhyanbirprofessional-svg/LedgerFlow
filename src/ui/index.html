@@ -582,13 +582,36 @@
     </div>
   </div>
 
-  <!-- PDF / AI Reading Progress Dialog -->
+  <!-- PDF / AI Reading & Analysis Live Progress Dialog -->
   <div id="pdf-progress-modal" class="modal-backdrop hidden" style="z-index:1200;">
-    <div class="modal" style="max-width:420px;text-align:center;padding:28px 24px;">
-      <div class="lf-progress-spinner" aria-hidden="true"></div>
-      <h3 id="pdf-progress-title" style="margin:14px 0 6px;font-size:17px;">Reading PDF Statement...</h3>
-      <p id="pdf-progress-sub" class="muted text-sm" style="margin:0 0 16px;">Extracting transactions locally. Large statements may take a few seconds...</p>
-      <div class="lf-progress-track"><div class="lf-progress-bar"></div></div>
+    <div class="modal" style="max-width:520px;text-align:center;padding:24px 22px;">
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
+        <div class="lf-progress-spinner" style="margin:0;width:32px;height:32px;flex-shrink:0;" aria-hidden="true"></div>
+        <div style="text-align:left;min-width:0;flex:1;">
+          <h3 id="pdf-progress-title" style="margin:0 0 2px;font-size:16.5px;">Reading PDF Statement...</h3>
+          <p id="pdf-progress-sub" class="muted text-xs" style="margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Preparing file...</p>
+        </div>
+        <span id="pdf-progress-pct" class="badge" style="font-weight:700;min-width:44px;text-align:center;">0%</span>
+      </div>
+      <div class="lf-progress-track" style="margin-top:14px;">
+        <div id="pdf-progress-fill" class="lf-progress-fill" style="width:6%;"></div>
+      </div>
+      <div id="pdf-progress-stats" class="text-xs muted" style="margin-top:8px;font-weight:600;">Starting...</div>
+      <div id="pdf-progress-feed" class="lf-progress-feed hidden"></div>
+    </div>
+  </div>
+
+  <!-- Full-Screen App Update Overlay -->
+  <div id="full-update-overlay" class="modal-backdrop hidden" style="z-index:1500;backdrop-filter:blur(8px);background:rgba(15,23,42,0.82);">
+    <div class="modal" style="max-width:460px;text-align:center;padding:32px 26px;">
+      <div id="full-upd-spinner" class="lf-progress-spinner" aria-hidden="true"></div>
+      <div id="full-upd-icon" class="hidden" style="font-size:40px;line-height:1;">🔄</div>
+      <h2 id="full-upd-title" style="margin:16px 0 8px;font-size:20px;">Installing Update...</h2>
+      <p id="full-upd-sub" class="muted text-sm" style="margin:0 0 18px;">Downloading latest LedgerFlow update package from GitHub...</p>
+      <div class="lf-progress-track" style="margin-bottom:18px;">
+        <div id="full-upd-fill" class="lf-progress-fill" style="width:25%;"></div>
+      </div>
+      <button type="button" class="btn btn-primary w-full hidden" id="full-upd-restart-btn" style="padding:12px 18px;font-size:15px;font-weight:700;">🔄 Restart LedgerFlow Now</button>
     </div>
   </div>
 

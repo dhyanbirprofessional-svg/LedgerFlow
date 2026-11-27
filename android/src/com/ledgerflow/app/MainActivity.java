@@ -503,6 +503,30 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String startParseStatementJob(final String requestJson) {
+            try {
+                final JSONObject req = new JSONObject(requestJson);
+                final String fileName = req.optString("fileName", "statement.xlsx");
+                final String base64 = req.optString("base64", "");
+                final String password = req.optString("password", "");
+                final StatementParser.ParseJobState job = StatementParser.createParseJob();
+                bgExecutor.execute(() -> StatementParser.runParseJob(job, fileName, base64, password));
+                return "{\"ok\":true,\"jobId\":" + JSONObject.quote(job.jobId) + "}";
+            } catch (Exception ex) {
+                return "{\"ok\":false,\"error\":" + JSONObject.quote(ex.getMessage()) + "}";
+            }
+        }
+
+        @JavascriptInterface
+        public String getParseStatementJobStatus(final String jobId) {
+            try {
+                return StatementParser.getParseJobStatusJson(jobId);
+            } catch (Exception ex) {
+                return "{\"ok\":false,\"done\":true,\"error\":" + JSONObject.quote(ex.getMessage()) + "}";
+            }
+        }
+
+        @JavascriptInterface
         public void parseStatementJsonAsync(final String cbId, final String requestJson) {
             bgExecutor.execute(() -> dispatchAsyncResult(cbId, parseStatementJson(requestJson)));
         }
