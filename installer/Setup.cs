@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -14,7 +14,7 @@ using Microsoft.Win32;
 namespace LedgerFlowSetup {
     static class Program {
         private const string AppName = "LedgerFlow";
-        private const string AppVersion = "1.0.2";
+        private const string AppVersion = "1.0.3";
         private const string Publisher = "LedgerFlow Software";
         private const string UninstallRegPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\LedgerFlow";
 
@@ -25,6 +25,7 @@ namespace LedgerFlowSetup {
 
             bool isUninstall = false;
             bool quiet = false;
+            bool relaunch = false;
             bool skipSystemIntegration = false;
             string silentDir = null;
 
@@ -32,6 +33,7 @@ namespace LedgerFlowSetup {
                 string a = args[i].ToLowerInvariant();
                 if (a == "--uninstall" || a == "/uninstall") isUninstall = true;
                 else if (a == "--quiet" || a == "--silent" || a == "/s") quiet = true;
+                else if (a == "--relaunch") relaunch = true;
                 else if (a == "--no-sys") skipSystemIntegration = true;
                 else if (a.StartsWith("--dir=")) silentDir = args[i].Substring(6).Trim('"');
             }
@@ -44,6 +46,12 @@ namespace LedgerFlowSetup {
                 string target = string.IsNullOrEmpty(silentDir) ? GetDefaultInstallDir() : silentDir;
                 try {
                     PerformInstall(target, !skipSystemIntegration, !skipSystemIntegration, !skipSystemIntegration, null);
+                    if (relaunch) {
+                        string exe = Path.Combine(target, "LedgerFlow.exe");
+                        if (File.Exists(exe)) {
+                            Process.Start(new ProcessStartInfo { FileName = exe, WorkingDirectory = target, UseShellExecute = true });
+                        }
+                    }
                     return 0;
                 } catch (Exception ex) {
                     Console.Error.WriteLine("Install error: " + ex);
@@ -108,14 +116,14 @@ namespace LedgerFlowSetup {
                 if (onProgress != null) onProgress(80, "Creating Start Menu shortcuts...");
                 string startDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), AppName);
                 Directory.CreateDirectory(startDir);
-                CreateShortcut(Path.Combine(startDir, AppName + ".lnk"), mainExe, installDir, "LedgerFlow â€” Smart Personal Finance & Expense Tracker", mainExe + ",0", "");
+                CreateShortcut(Path.Combine(startDir, AppName + ".lnk"), mainExe, installDir, "LedgerFlow — Smart Personal Finance & Expense Tracker", mainExe + ",0", "");
                 CreateShortcut(Path.Combine(startDir, "Uninstall " + AppName + ".lnk"), uninstallExe, installDir, "Uninstall LedgerFlow", uninstallExe + ",0", "--uninstall");
             }
 
             if (createDesktopShortcut) {
                 if (onProgress != null) onProgress(88, "Creating Desktop shortcut...");
                 string desktopLnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), AppName + ".lnk");
-                CreateShortcut(desktopLnk, mainExe, installDir, "LedgerFlow â€” Expense Tracker", mainExe + ",0", "");
+                CreateShortcut(desktopLnk, mainExe, installDir, "LedgerFlow — Expense Tracker", mainExe + ",0", "");
             }
 
             if (registerUninstall) {
@@ -255,7 +263,7 @@ namespace LedgerFlowSetup {
         private bool installDone = false;
 
         public SetupForm() {
-            Text = "LedgerFlow Setup â€” v1.0.0";
+            Text = "LedgerFlow Setup — v1.0.0";
             ClientSize = new Size(560, 420);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;

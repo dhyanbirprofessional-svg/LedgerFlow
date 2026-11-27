@@ -1,7 +1,7 @@
-﻿{
-    "version":  "1.0.2",
+{
+    "version":  "1.0.3",
     "repo":  "dhyanbirprofessional-svg/LedgerFlow",
-    "notes":  "Fix clicks/hangs/crashes (async Android bridge, Settings esc fix, toast pointer pass-through) and use Gemini strictly to verify PDFs before importing entries.",
+    "notes":  "Add direct 1-click Check \u0026 Install Updates button in topbar/sidebar, in-app Android APK installer (ApkContentProvider), silent Windows relaunch updater, and fix UTF-8 text encoding.",
     "windowsAsset":  "LedgerFlow-Setup.exe",
     "androidAsset":  "LedgerFlow.apk",
     "releaseUrl":  "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"

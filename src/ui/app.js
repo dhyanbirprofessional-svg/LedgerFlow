@@ -1,47 +1,47 @@
-﻿/* LedgerFlow â€” Complete Offline-First Personal Finance & Expense Tracker Engine */
+/* LedgerFlow — Complete Offline-First Personal Finance & Expense Tracker Engine */
 (function () {
   "use strict";
 
   const CURRENCIES = {
-    INR: { symbol: "â‚¹", name: "Indian Rupee", rateToUSD: 0.0119 },
+    INR: { symbol: "₹", name: "Indian Rupee", rateToUSD: 0.0119 },
     USD: { symbol: "$", name: "US Dollar", rateToUSD: 1.0 },
-    EUR: { symbol: "â‚¬", name: "Euro", rateToUSD: 1.08 },
-    GBP: { symbol: "Â£", name: "British Pound", rateToUSD: 1.27 },
-    JPY: { symbol: "Â¥", name: "Japanese Yen", rateToUSD: 0.0065 },
-    AED: { symbol: "Ø¯.Ø¥", name: "UAE Dirham", rateToUSD: 0.272 },
+    EUR: { symbol: "€", name: "Euro", rateToUSD: 1.08 },
+    GBP: { symbol: "£", name: "British Pound", rateToUSD: 1.27 },
+    JPY: { symbol: "¥", name: "Japanese Yen", rateToUSD: 0.0065 },
+    AED: { symbol: "د.إ", name: "UAE Dirham", rateToUSD: 0.272 },
     CAD: { symbol: "C$", name: "Canadian Dollar", rateToUSD: 0.72 },
     AUD: { symbol: "A$", name: "Australian Dollar", rateToUSD: 0.65 },
     SGD: { symbol: "S$", name: "Singapore Dollar", rateToUSD: 0.74 }
   };
 
   const DEFAULT_CATEGORIES = [
-    { id: "food", name: "Food & Dining", icon: "ðŸ½ï¸", color: "#f97316", type: "expense", costNature: "variable" },
-    { id: "groceries", name: "Groceries", icon: "ðŸ›’", color: "#10b981", type: "expense", costNature: "variable" },
-    { id: "transport", name: "Transport & Fuel", icon: "ðŸš—", color: "#0ea5e9", type: "expense", costNature: "variable" },
-    { id: "housing", name: "Rent & Housing", icon: "ðŸ ", color: "#6366f1", type: "expense", costNature: "fixed" },
-    { id: "utilities", name: "Utilities & Internet", icon: "âš¡", color: "#eab308", type: "expense", costNature: "fixed" },
-    { id: "emi_loan", name: "Loans & EMIs", icon: "ðŸ¦", color: "#dc2626", type: "expense", costNature: "fixed" },
-    { id: "sip_invest", name: "Investments & SIP", icon: "ðŸ“Š", color: "#0284c7", type: "expense", costNature: "fixed" },
-    { id: "subscriptions", name: "Subscriptions", icon: "ðŸ”„", color: "#8b5cf6", type: "expense", costNature: "fixed" },
-    { id: "bank_fees", name: "Bank Charges & Fees", icon: "ðŸ§¾", color: "#64748b", type: "expense", costNature: "fixed" },
-    { id: "shopping", name: "Shopping", icon: "ðŸ›ï¸", color: "#ec4899", type: "expense", costNature: "variable" },
-    { id: "health", name: "Health & Fitness", icon: "ðŸ’Š", color: "#14b8a6", type: "expense", costNature: "variable" },
-    { id: "travel", name: "Travel", icon: "âœˆï¸", color: "#3b82f6", type: "expense", costNature: "variable" },
-    { id: "entertainment", name: "Entertainment", icon: "ðŸŽ¬", color: "#f43f5e", type: "expense", costNature: "variable" },
-    { id: "education", name: "Education & Books", icon: "ðŸ“š", color: "#06b6d4", type: "expense", costNature: "variable" },
-    { id: "personal_transfer", name: "People & Transfers Out", icon: "ðŸ¤", color: "#a855f7", type: "expense", costNature: "variable" },
-    { id: "other_exp", name: "Other Expense", icon: "ðŸ“¦", color: "#64748b", type: "expense", costNature: "variable" },
-    { id: "salary", name: "Salary & Payroll", icon: "ðŸ’¼", color: "#10b981", type: "income" },
-    { id: "freelance", name: "Freelance & Consulting", icon: "ðŸ’»", color: "#4f46e5", type: "income" },
-    { id: "investments", name: "Dividends & Interest", icon: "ðŸ“ˆ", color: "#0ea5e9", type: "income" },
-    { id: "refund", name: "Refunds & Cashback", icon: "ðŸŽ", color: "#f59e0b", type: "income" },
-    { id: "transfer", name: "Account Transfer", icon: "â‡„", color: "#64748b", type: "transfer" }
+    { id: "food", name: "Food & Dining", icon: "🍽️", color: "#f97316", type: "expense", costNature: "variable" },
+    { id: "groceries", name: "Groceries", icon: "🛒", color: "#10b981", type: "expense", costNature: "variable" },
+    { id: "transport", name: "Transport & Fuel", icon: "🚗", color: "#0ea5e9", type: "expense", costNature: "variable" },
+    { id: "housing", name: "Rent & Housing", icon: "🏠", color: "#6366f1", type: "expense", costNature: "fixed" },
+    { id: "utilities", name: "Utilities & Internet", icon: "⚡", color: "#eab308", type: "expense", costNature: "fixed" },
+    { id: "emi_loan", name: "Loans & EMIs", icon: "🏦", color: "#dc2626", type: "expense", costNature: "fixed" },
+    { id: "sip_invest", name: "Investments & SIP", icon: "📊", color: "#0284c7", type: "expense", costNature: "fixed" },
+    { id: "subscriptions", name: "Subscriptions", icon: "🔄", color: "#8b5cf6", type: "expense", costNature: "fixed" },
+    { id: "bank_fees", name: "Bank Charges & Fees", icon: "🧾", color: "#64748b", type: "expense", costNature: "fixed" },
+    { id: "shopping", name: "Shopping", icon: "🛍️", color: "#ec4899", type: "expense", costNature: "variable" },
+    { id: "health", name: "Health & Fitness", icon: "💊", color: "#14b8a6", type: "expense", costNature: "variable" },
+    { id: "travel", name: "Travel", icon: "✈️", color: "#3b82f6", type: "expense", costNature: "variable" },
+    { id: "entertainment", name: "Entertainment", icon: "🎬", color: "#f43f5e", type: "expense", costNature: "variable" },
+    { id: "education", name: "Education & Books", icon: "📚", color: "#06b6d4", type: "expense", costNature: "variable" },
+    { id: "personal_transfer", name: "People & Transfers Out", icon: "🤝", color: "#a855f7", type: "expense", costNature: "variable" },
+    { id: "other_exp", name: "Other Expense", icon: "📦", color: "#64748b", type: "expense", costNature: "variable" },
+    { id: "salary", name: "Salary & Payroll", icon: "💼", color: "#10b981", type: "income" },
+    { id: "freelance", name: "Freelance & Consulting", icon: "💻", color: "#4f46e5", type: "income" },
+    { id: "investments", name: "Dividends & Interest", icon: "📈", color: "#0ea5e9", type: "income" },
+    { id: "refund", name: "Refunds & Cashback", icon: "🎁", color: "#f59e0b", type: "income" },
+    { id: "transfer", name: "Account Transfer", icon: "⇄", color: "#64748b", type: "transfer" }
   ];
 
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const API_TOKEN = URL_PARAMS.get("token") || "";
   const IS_PREVIEW_PARAM = URL_PARAMS.get("preview") === "1";
-  const APP_VERSION = "1.0.2";
+  const APP_VERSION = "1.0.3";
   const GITHUB_REPO = "dhyanbirprofessional-svg/LedgerFlow";
 
   let isDesktopHost = false;
@@ -142,7 +142,7 @@
 
   function getCat(id) {
     return (state.categories || DEFAULT_CATEGORIES).find((c) => c.id === id) || {
-      id: "other_exp", name: "Uncategorized", icon: "ðŸ“¦", color: "#64748b", type: "expense"
+      id: "other_exp", name: "Uncategorized", icon: "📦", color: "#64748b", type: "expense"
     };
   }
 
@@ -154,7 +154,7 @@
     const box = document.getElementById("toast-container");
     if (!box) return;
     const raw = String(msg || "").trim();
-    const shortMsg = raw.length > 220 ? raw.slice(0, 217) + "â€¦" : raw;
+    const shortMsg = raw.length > 220 ? raw.slice(0, 217) + "…" : raw;
     const el = document.createElement("div");
     el.className = "toast";
     el.textContent = shortMsg;
@@ -467,7 +467,7 @@
           } else {
             state = createBlankState();
             await saveState();
-            setTimeout(() => toast("LedgerFlow ready! All balances start at zero â€” click '+ Add Entry' to insert your amounts."), 600);
+            setTimeout(() => toast("LedgerFlow ready! All balances start at zero — click '+ Add Entry' to insert your amounts."), 600);
           }
           return;
         }
@@ -549,7 +549,7 @@
       const s = new Date(customPeriodStart + "T00:00:00");
       const e = new Date(customPeriodEnd + "T23:59:59.999");
       if (!isNaN(s) && !isNaN(e)) {
-        const lbl = `${s.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} â€“ ${e.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}`;
+        const lbl = `${s.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} – ${e.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}`;
         return { start: s, end: e, label: lbl };
       }
     }
@@ -565,8 +565,8 @@
     if (!a) return "Account";
     const bank = String(a.bankName || "").trim();
     const last4 = String(a.accountNumberLast4 || "").trim();
-    const tail = last4 ? ` (â€¢â€¢${last4})` : "";
-    return bank ? `${bank} â€” ${a.name}${tail}` : `${a.name}${tail}`;
+    const tail = last4 ? ` (••${last4})` : "";
+    return bank ? `${bank} — ${a.name}${tail}` : `${a.name}${tail}`;
   }
 
   function getLedger(id) {
@@ -843,7 +843,7 @@
 
     const maxVal = Math.max(1000, ...months.flatMap((m) => [m.income, m.expense]));
     if (months.every((m) => m.income === 0 && m.expense === 0)) {
-      el.innerHTML = `<div class="muted text-sm" style="padding:48px 0;text-align:center;">No transactions yet â€” add your first income or expense to see 6-month cash flow trends.</div>`;
+      el.innerHTML = `<div class="muted text-sm" style="padding:48px 0;text-align:center;">No transactions yet — add your first income or expense to see 6-month cash flow trends.</div>`;
       return;
     }
     const W = 560, H = 225, padL = 52, padR = 16, padT = 18, padB = 30;
@@ -1242,7 +1242,7 @@
           <span class="tag-chip">${esc(formatDateYMD(start))} &rarr; ${esc(formatDateYMD(end))}</span>
         </div>
         <div class="flex-gap" style="flex-wrap:wrap;">
-          <button class="btn btn-secondary btn-xs" id="ov-ask-ai-btn">âœ¨ Ask AI</button>
+          <button class="btn btn-secondary btn-xs" id="ov-ask-ai-btn">✨ Ask AI</button>
           <button class="btn btn-secondary btn-xs" id="ov-change-range-btn">Change Month / Date Range</button>
           <button class="btn btn-primary btn-xs" id="ov-open-bank-ledger-btn">Open Bank Ledger (Dr/Cr)</button>
         </div>
@@ -1274,13 +1274,13 @@
       <div class="grid-main-side mb-4">
         <div class="card">
           <div class="card-header">
-            <div><h3 class="card-title">6-Month Cash Flow</h3><p class="card-subtitle">Total Credits (emerald) vs Total Debits (indigo) â€” hover for exact figures</p></div>
+            <div><h3 class="card-title">6-Month Cash Flow</h3><p class="card-subtitle">Total Credits (emerald) vs Total Debits (indigo) — hover for exact figures</p></div>
           </div>
           <div id="overview-cashflow-chart"></div>
         </div>
         <div class="card">
           <div class="card-header">
-            <div><h3 class="card-title">Debits by Category</h3><p class="card-subtitle">${esc(label)} â€” click a slice to view matching entries</p></div>
+            <div><h3 class="card-title">Debits by Category</h3><p class="card-subtitle">${esc(label)} — click a slice to view matching entries</p></div>
           </div>
           <div id="overview-donut-chart"></div>
         </div>
@@ -1452,7 +1452,7 @@
   function openAssignLedgerModal(txId) {
     const tx = (state.transactions || []).find((t) => t.id === txId);
     if (!tx) return;
-    const ledOpts = (state.ledgers || []).map((l) => `<option value="${l.id}" ${tx.ledgerId === l.id ? "selected" : ""}>${l.type === "drawings" ? "ðŸ’¸" : (l.protectedFromDrawings || l.isUserCreated ? "ðŸ”’" : "ðŸ‘¤")} ${esc(l.name)}</option>`).join("");
+    const ledOpts = (state.ledgers || []).map((l) => `<option value="${l.id}" ${tx.ledgerId === l.id ? "selected" : ""}>${l.type === "drawings" ? "💸" : (l.protectedFromDrawings || l.isUserCreated ? "🔒" : "👤")} ${esc(l.name)}</option>`).join("");
     openSubModal("Assign Separate Ledger / Drawings", `
       <form id="assign-led-form" style="display:flex;flex-direction:column;gap:12px;">
         <div class="text-sm" style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:10px;">
@@ -1462,7 +1462,7 @@
         <div class="field">
           <label>Select Separate Ledger or Drawings</label>
           <select id="al-select">
-            <option value="">â€” Unassigned (Bank General) â€”</option>
+            <option value="">— Unassigned (Bank General) —</option>
             ${ledOpts}
           </select>
         </div>
@@ -1563,8 +1563,8 @@
 
     const subTabsHtml = `
       <div class="ledger-subtabs">
-        <button type="button" class="tier-tab ${ledgerSubView === "bank" ? "active" : ""}" id="led-tab-bank">ðŸ¦ Bank &amp; Party Ledger</button>
-        <button type="button" class="tier-tab ${ledgerSubView === "directory" ? "active" : ""}" id="led-tab-dir">ðŸ“‘ All Ledgers (${(state.ledgers || []).length})</button>
+        <button type="button" class="tier-tab ${ledgerSubView === "bank" ? "active" : ""}" id="led-tab-bank">🏦 Bank &amp; Party Ledger</button>
+        <button type="button" class="tier-tab ${ledgerSubView === "directory" ? "active" : ""}" id="led-tab-dir">📑 All Ledgers (${(state.ledgers || []).length})</button>
       </div>`;
 
     const isMobView = isMobileExperience();
@@ -1584,7 +1584,7 @@
             <label class="inline-date-field"><span class="text-xs muted">From</span><input id="led-from-date" type="date" value="${curStartStr}" /></label>
             <label class="inline-date-field"><span class="text-xs muted">To</span><input id="led-to-date" type="date" value="${curEndStr}" /></label>
             <button type="button" class="btn btn-secondary btn-sm" id="new-ledger-btn">+ New Ledger</button>
-            <button type="button" class="btn btn-primary btn-sm" id="ai-sync-ledgers-btn">âœ¨ AI Fetch Party Ledgers</button>
+            <button type="button" class="btn btn-primary btn-sm" id="ai-sync-ledgers-btn">✨ AI Fetch Party Ledgers</button>
           </div>
         </details>
       </div>`;
@@ -1615,7 +1615,7 @@
         <div class="card" style="padding:0;overflow:hidden;">
           <div class="card-header" style="padding:14px 16px;margin:0;border-bottom:1px solid var(--border);">
             <div>
-              <h3 class="card-title">All Party &amp; Separate Ledgers â€” Line-by-Line (${rows.length})</h3>
+              <h3 class="card-title">All Party &amp; Separate Ledgers — Line-by-Line (${rows.length})</h3>
               <p class="card-subtitle">All transaction parties are kept separately here for ${esc(label)}. Click any ledger line to view its Dr/Cr account.</p>
             </div>
           </div>
@@ -1644,7 +1644,7 @@
                       <td class="text-xs muted">${idx + 1}</td>
                       <td>
                         <button type="button" class="link-btn" data-open-dir-led="${l.id}" style="text-align:left;">
-                          ${l.type === "drawings" ? "ðŸ’¸" : isProt ? "ðŸ”’" : "ðŸ‘¤"} ${esc(l.name)}
+                          ${l.type === "drawings" ? "💸" : isProt ? "🔒" : "👤"} ${esc(l.name)}
                         </button>
                         ${l.notes ? `<div class="text-xs muted">${esc(l.notes)}</div>` : ""}
                       </td>
@@ -1666,7 +1666,7 @@
                         ${l.id !== "led_drawings" ? `<button type="button" class="btn btn-ghost btn-xs" style="color:var(--rose);" data-del-led="${l.id}">Del</button>` : ""}
                       </td>
                     </tr>`;
-                }).join("") : `<tr><td colspan="9" class="muted text-sm" style="text-align:center;padding:34px;">No separate ledgers found. Click <strong>+ New Ledger</strong> or <strong>âœ¨ AI Fetch Party Ledgers</strong>.</td></tr>`}
+                }).join("") : `<tr><td colspan="9" class="muted text-sm" style="text-align:center;padding:34px;">No separate ledgers found. Click <strong>+ New Ledger</strong> or <strong>✨ AI Fetch Party Ledgers</strong>.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -1692,7 +1692,7 @@
           l.isUserCreated = l.protectedFromDrawings;
           saveState();
           renderLedgersView(root);
-          toast(l.protectedFromDrawings ? `"${l.name}" protected â€” always stays separate.` : `"${l.name}" unprotected.`);
+          toast(l.protectedFromDrawings ? `"${l.name}" protected — always stays separate.` : `"${l.name}" unprotected.`);
         };
       });
       root.querySelectorAll("[data-edit-led]").forEach((b) => { b.onclick = () => openLedgerModal(b.dataset.editLed); });
@@ -1778,7 +1778,7 @@
     const renderLedChip = (t) => {
       const led = getLedger(t.ledgerId);
       if (led) {
-        const icon = led.type === "drawings" ? "ðŸ’¸" : (led.protectedFromDrawings || led.isUserCreated ? "ðŸ”’" : "ðŸ‘¤");
+        const icon = led.type === "drawings" ? "💸" : (led.protectedFromDrawings || led.isUserCreated ? "🔒" : "👤");
         return `<button type="button" class="ledger-chip-btn" data-assign-led="${t.id}" title="Click to assign Separate Ledger or Drawings">${icon} ${esc(led.name)}</button>`;
       }
       return `<button type="button" class="ledger-chip-btn" data-assign-led="${t.id}" style="color:var(--text-muted);" title="Assign to Separate Ledger or Drawings">+ Assign</button>`;
@@ -1789,10 +1789,10 @@
       const sumAmt = items.reduce((s, x) => s + x.amt, 0);
       return `
         <tr style="background:var(--amber-soft);">
-          <td class="text-xs muted">${esc(curStartStr)}â€“${esc(curEndStr.slice(5))}</td>
+          <td class="text-xs muted">${esc(curStartStr)}–${esc(curEndStr.slice(5))}</td>
           <td>
             <div class="flex-between" style="gap:6px;flex-wrap:wrap;">
-              <strong>${sidePrefix} Drawings (Consolidated â‚¹${Number(dRule.min) || 0}â€“â‚¹${Number(dRule.max) || 0})</strong>
+              <strong>${sidePrefix} Drawings (Consolidated ₹${Number(dRule.min) || 0}–₹${Number(dRule.max) || 0})</strong>
               <button type="button" class="ledger-chip-btn" data-toggle-drawings-expand="1">${drawingsExpanded ? "Hide" : `View ${items.length}`}</button>
             </div>
             <div class="text-xs muted">${items.length} unpinned/range entries consolidated (protected ledgers excluded)</div>
@@ -1801,7 +1801,7 @@
         </tr>
         ${drawingsExpanded ? items.map(({ tx, amt }) => `
           <tr style="background:var(--bg);">
-            <td class="text-xs muted" style="padding-left:16px;">â†³ ${fmtShortDate(tx.date)}</td>
+            <td class="text-xs muted" style="padding-left:16px;">↳ ${fmtShortDate(tx.date)}</td>
             <td>
               <div class="flex-between" style="gap:6px;flex-wrap:wrap;">
                 <span class="text-xs">${sidePrefix} ${esc(tx.payee)}</span>
@@ -1894,8 +1894,8 @@
       <div class="date-range-bar">
         <div class="ledger-bar-primary">
           <select id="led-view-select">
-            <option value="bank_all" ${selectedLedgerId === "bank_all" ? "selected" : ""}>ðŸ¦ Bank Ledger (Final Dr/Cr)</option>
-            ${(state.ledgers || []).map((l) => `<option value="${l.id}" ${selectedLedgerId === l.id ? "selected" : ""}>${l.type === "drawings" ? "ðŸ’¸" : (l.protectedFromDrawings || l.isUserCreated ? "ðŸ”’" : "ðŸ‘¤")} ${esc(l.name)}</option>`).join("")}
+            <option value="bank_all" ${selectedLedgerId === "bank_all" ? "selected" : ""}>🏦 Bank Ledger (Final Dr/Cr)</option>
+            ${(state.ledgers || []).map((l) => `<option value="${l.id}" ${selectedLedgerId === l.id ? "selected" : ""}>${l.type === "drawings" ? "💸" : (l.protectedFromDrawings || l.isUserCreated ? "🔒" : "👤")} ${esc(l.name)}</option>`).join("")}
           </select>
           <div id="led-acc-wrap" class="flex-gap">
             <select id="led-acc-select">
@@ -1912,7 +1912,7 @@
             <label class="inline-date-field"><span class="text-xs muted">From</span><input id="led-from-date" type="date" value="${curStartStr}" /></label>
             <label class="inline-date-field"><span class="text-xs muted">To</span><input id="led-to-date" type="date" value="${curEndStr}" /></label>
             <button type="button" class="btn btn-secondary btn-sm" id="new-ledger-btn">+ New Ledger</button>
-            <button type="button" class="btn btn-primary btn-sm" id="ai-sync-ledgers-btn">âœ¨ AI Fetch Party Ledgers</button>
+            <button type="button" class="btn btn-primary btn-sm" id="ai-sync-ledgers-btn">✨ AI Fetch Party Ledgers</button>
             <button type="button" class="btn btn-ghost btn-sm" id="export-ledger-btn">Export CSV</button>
           </div>
         </details>
@@ -1926,11 +1926,11 @@
               <input type="checkbox" id="led-drawings-enabled" ${dRule.enabled ? "checked" : ""} />
               <span><strong>Consolidate Drawings Figure Range</strong></span>
             </label>
-            <div class="text-xs muted">Consolidates range entries under Drawings in Bank Ledger â€” user-created &amp; ðŸ”’ Protected Separate Ledgers stay intact.</div>
+            <div class="text-xs muted">Consolidates range entries under Drawings in Bank Ledger — user-created &amp; 🔒 Protected Separate Ledgers stay intact.</div>
           </div>
           <div class="drawings-rule-controls">
-            <label class="inline-date-field"><span class="text-xs muted">Min â‚¹</span><input id="led-draw-min" type="number" min="0" step="50" value="${Number(dRule.min) || 0}" /></label>
-            <label class="inline-date-field"><span class="text-xs muted">Max â‚¹</span><input id="led-draw-max" type="number" min="1" step="50" value="${Number(dRule.max) || 500}" /></label>
+            <label class="inline-date-field"><span class="text-xs muted">Min ₹</span><input id="led-draw-min" type="number" min="0" step="50" value="${Number(dRule.min) || 0}" /></label>
+            <label class="inline-date-field"><span class="text-xs muted">Max ₹</span><input id="led-draw-max" type="number" min="1" step="50" value="${Number(dRule.max) || 500}" /></label>
             <select id="led-draw-side">
               <option value="debits" ${dRule.side !== "both" ? "selected" : ""}>Outflows / Debits Only</option>
               <option value="both" ${dRule.side === "both" ? "selected" : ""}>Both Credits &amp; Debits</option>
@@ -1940,7 +1940,7 @@
         </div>` : `
         <div class="flex-between mb-3" style="padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;flex-wrap:wrap;gap:8px;">
           <div>
-            <strong>${activeLed.type === "drawings" ? "ðŸ’¸" : "ðŸ”’"} Viewing Separate Ledger: ${esc(activeLed.name)}</strong>
+            <strong>${activeLed.type === "drawings" ? "💸" : "🔒"} Viewing Separate Ledger: ${esc(activeLed.name)}</strong>
             <span class="tag-chip">${esc(activeLed.type)}</span>
             ${activeLed.protectedFromDrawings || activeLed.isUserCreated ? `<span class="badge delta-up">Protected from Drawings Range</span>` : ""}
           </div>
@@ -1963,7 +1963,7 @@
           <div class="ledger-line-list">
             <button type="button" class="ledger-line-row ${selectedLedgerId === "bank_all" ? "active" : ""}" data-pick-led="bank_all">
               <div>
-                <div>ðŸ¦ Bank Ledger (Final)</div>
+                <div>🏦 Bank Ledger (Final)</div>
                 <div class="ledger-line-meta">Consolidated Dr/Cr book</div>
               </div>
               <span class="money-val text-xs"><strong>${fmtMoney(closingBal)}</strong></span>
@@ -1975,7 +1975,7 @@
               return `
                 <button type="button" class="ledger-line-row ${selectedLedgerId === l.id ? "active" : ""}" data-pick-led="${l.id}">
                   <div style="min-width:0;">
-                    <div class="truncate">${l.type === "drawings" ? "ðŸ’¸" : isProt ? "ðŸ”’" : "ðŸ‘¤"} ${esc(l.name)}</div>
+                    <div class="truncate">${l.type === "drawings" ? "💸" : isProt ? "🔒" : "👤"} ${esc(l.name)}</div>
                     <div class="ledger-line-meta">${st.count} entries &bull; ${esc(l.type)}</div>
                   </div>
                   <span class="money-val text-xs" style="color:${netL >= 0 ? "var(--emerald)" : "var(--text-muted)"};">${fmtMoney(Math.abs(netL))}</span>
@@ -2028,7 +2028,7 @@
             <div class="t-ledger-grid">
               <div class="t-ledger-col ${ledgerMobileSide !== "dr" ? "mobile-hidden" : ""}">
                 <div class="t-ledger-head t-ledger-head-dr">
-                  <span>Dr. Side â€” Receipts / Inflows</span>
+                  <span>Dr. Side — Receipts / Inflows</span>
                   <span>${drRows.length + consolidatedDrawingsDr.length} entries</span>
                 </div>
                 <div class="t-ledger-body">
@@ -2045,7 +2045,7 @@
 
               <div class="t-ledger-col ${ledgerMobileSide !== "cr" ? "mobile-hidden" : ""}">
                 <div class="t-ledger-head t-ledger-head-cr">
-                  <span>Cr. Side â€” Payments / Outflows</span>
+                  <span>Cr. Side — Payments / Outflows</span>
                   <span>${crRows.length + consolidatedDrawingsCr.length} entries</span>
                 </div>
                 <div class="t-ledger-body">
@@ -2165,7 +2165,7 @@
       document.getElementById("new-ledger-btn").onclick = () => openLedgerModal();
       document.getElementById("ai-sync-ledgers-btn").onclick = async () => {
         const btn = document.getElementById("ai-sync-ledgers-btn");
-        btn.disabled = true; btn.textContent = "Fetchingâ€¦";
+        btn.disabled = true; btn.textContent = "Fetching…";
         try {
           const res = await runHybridAIClassification(state.transactions || [], { onlyUncertain: true });
           let linked = 0;
@@ -2185,11 +2185,11 @@
           await saveState();
           updateSidebarMeta();
           renderLedgersView(scopeRoot);
-          toast(`âœ¨ Synced ledgers: ${linked} entry(ies) linked via ${res.source}.`);
+          toast(`✨ Synced ledgers: ${linked} entry(ies) linked via ${res.source}.`);
         } catch (err) {
           toast("Ledger AI sync failed: " + err.message);
         } finally {
-          btn.disabled = false; btn.textContent = "âœ¨ AI Fetch Party Ledgers";
+          btn.disabled = false; btn.textContent = "✨ AI Fetch Party Ledgers";
         }
       };
     }
@@ -2277,7 +2277,7 @@
             <input id="flt-from" type="date" value="${esc(txFilters.dateFrom || "")}" title="From Date" />
             <input id="flt-to" type="date" value="${esc(txFilters.dateTo || "")}" title="To Date" />
             <label class="checkbox-label"><input type="checkbox" id="flt-tax" ${txFilters.taxOnly ? "checked" : ""}/> Tax Only</label>
-            <button class="btn btn-primary btn-sm" id="ai-classify-btn" title="Run Hybrid AI on uncertain/all filtered entries">âœ¨ AI Classify</button>
+            <button class="btn btn-primary btn-sm" id="ai-classify-btn" title="Run Hybrid AI on uncertain/all filtered entries">✨ AI Classify</button>
             <button class="btn btn-secondary btn-sm" id="export-csv-btn">Export CSV</button>
           </div>
         </details>
@@ -2326,9 +2326,9 @@
                         <div>
                           <strong>${esc(t.payee)}</strong>
                           ${t.splits && t.splits.length ? `<span class="tag-chip">Split (${t.splits.length})</span>` : ""}
-                          ${t.aiReason ? `<span class="tag-chip" title="${esc(t.aiReason)}" style="background:var(--primary-soft);color:var(--primary);">âœ¨ AI</span>` : ""}
+                          ${t.aiReason ? `<span class="tag-chip" title="${esc(t.aiReason)}" style="background:var(--primary-soft);color:var(--primary);">✨ AI</span>` : ""}
                           ${t.taxDeductible ? `<span class="tag-chip" style="color:var(--sky);">Tax Deductible</span>` : ""}
-                          ${t.receipt ? `<button class="link-btn text-xs" data-view-receipt="${t.id}">ðŸ“Ž Receipt</button>` : ""}
+                          ${t.receipt ? `<button class="link-btn text-xs" data-view-receipt="${t.id}">📎 Receipt</button>` : ""}
                           <div class="text-xs muted">${esc(t.notes || t.method || "")} ${(t.tags || []).map((tg) => "#" + esc(tg)).join(" ")}</div>
                         </div>
                       </div>
@@ -2368,17 +2368,17 @@
     document.getElementById("ai-classify-btn").onclick = async () => {
       const btn = document.getElementById("ai-classify-btn");
       btn.disabled = true;
-      btn.textContent = "Classifyingâ€¦";
+      btn.textContent = "Classifying…";
       try {
         const res = await runHybridAIClassification(filtered, { onlyUncertain: false });
         await saveState();
         renderTransactionsView(root);
-        toast(`âœ¨ AI classified ${res.updated} entry(ies) via ${res.source}.`);
+        toast(`✨ AI classified ${res.updated} entry(ies) via ${res.source}.`);
       } catch (err) {
         toast("AI classification failed: " + err.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = "âœ¨ AI Classify";
+        btn.textContent = "✨ AI Classify";
       }
     };
     document.getElementById("export-csv-btn").onclick = () => exportTransactionsCSV(filtered);
@@ -2499,7 +2499,7 @@
     document.getElementById("edit-overall-cap-btn").onclick = () => {
       openSubModal("Set Monthly Spending Cap", `
         <form id="cap-form" class="field">
-          <label>Monthly Total Spending Target (${state.settings.currency}) â€” set 0 to clear</label>
+          <label>Monthly Total Spending Target (${state.settings.currency}) — set 0 to clear</label>
           <input id="cap-input" type="number" min="0" step="100" value="${cap > 0 ? cap : ""}" placeholder="Enter monthly limit" required />
           <div class="modal-footer"><button type="button" class="btn btn-ghost" data-close="sub-modal">Cancel</button><button type="submit" class="btn btn-primary">Save Cap</button></div>
         </form>`);
@@ -2640,7 +2640,7 @@
                   <div class="flex-gap" style="flex-wrap:wrap;">
                     <span class="tag-chip">${esc(typeLbl)}</span>
                     ${a.bankName ? `<span class="tag-chip" style="background:var(--primary-soft);color:var(--primary);">${esc(a.bankName)}</span>` : ""}
-                    ${a.accountNumberLast4 ? `<span class="tag-chip">â€¢â€¢${esc(a.accountNumberLast4)}</span>` : ""}
+                    ${a.accountNumberLast4 ? `<span class="tag-chip">••${esc(a.accountNumberLast4)}</span>` : ""}
                   </div>
                   <h3 class="card-title mt-2">${esc(a.name)}</h3>
                 </div>
@@ -3017,7 +3017,7 @@
       const topBig = a.bigTxs.slice(0, 5).map((t, i) =>
         `${i + 1}. ${t.payee} on ${String(t.date).slice(0, 10)}: ${fmtMoney(txBaseAmount(t))} (${getCat(t.category).name})`
       );
-      return `Spike & Petty-Drain Check:\nâ€¢ High-value spends (>= ${fmtMoney(a.bigMin)}): ${a.bigTxs.length} entries totaling ${fmtMoney(a.bigTotal)}\n${topBig.length ? topBig.join("\n") + "\n" : ""}â€¢ Petty spends (<= ${fmtMoney(a.pettyMax)}): ${a.pettyCount} entries totaling ${fmtMoney(a.pettyTotal)}`;
+      return `Spike & Petty-Drain Check:\n• High-value spends (>= ${fmtMoney(a.bigMin)}): ${a.bigTxs.length} entries totaling ${fmtMoney(a.bigTotal)}\n${topBig.length ? topBig.join("\n") + "\n" : ""}• Petty spends (<= ${fmtMoney(a.pettyMax)}): ${a.pettyCount} entries totaling ${fmtMoney(a.pettyTotal)}`;
     }
 
     // 3. Top Payees / People
@@ -3044,7 +3044,7 @@
     if (/(save|saving|budget|advice|plan|balance|net worth)/i.test(ql)) {
       const top3 = a.topCats.slice(0, 3).map((c) => `${c.name} (${fmtMoney(c.total)})`).join(", ");
       const trimTarget = Math.round(a.pettyTotal * 0.25);
-      return `Financial Health & Savings Summary:\nâ€¢ Available Balance: ${fmtMoney(a.liquidBalance)}\nâ€¢ Total Inflow: ${fmtMoney(a.totalIn)} | Outflow: ${fmtMoney(a.totalOut)} | Net: ${fmtMoney(a.net)} (${a.savingsRate}% savings rate)\nâ€¢ Top 3 spend areas: ${top3}\nâ€¢ Actionable tip: Trimming 25% of your ${a.pettyCount} petty spends (${fmtMoney(a.pettyTotal)}) frees ~${fmtMoney(trimTarget)}. Review ${a.unlabelled.length} unlabelled transfers to sharpen budgets.`;
+      return `Financial Health & Savings Summary:\n• Available Balance: ${fmtMoney(a.liquidBalance)}\n• Total Inflow: ${fmtMoney(a.totalIn)} | Outflow: ${fmtMoney(a.totalOut)} | Net: ${fmtMoney(a.net)} (${a.savingsRate}% savings rate)\n• Top 3 spend areas: ${top3}\n• Actionable tip: Trimming 25% of your ${a.pettyCount} petty spends (${fmtMoney(a.pettyTotal)}) frees ~${fmtMoney(trimTarget)}. Review ${a.unlabelled.length} unlabelled transfers to sharpen budgets.`;
     }
 
     // 6. Specific merchant or category keyword search
@@ -3058,7 +3058,7 @@
       if (matches.length) {
         const mOut = matches.filter((t) => t.type === "expense").reduce((s, t) => s + txBaseAmount(t), 0);
         const mIn = matches.filter((t) => t.type === "income").reduce((s, t) => s + txBaseAmount(t), 0);
-        const sample = matches.slice(0, 6).map((t) => `â€¢ ${String(t.date).slice(0, 10)} | ${t.payee}: ${t.type === "income" ? "+" : "-"}${fmtMoney(txBaseAmount(t))}`).join("\n");
+        const sample = matches.slice(0, 6).map((t) => `• ${String(t.date).slice(0, 10)} | ${t.payee}: ${t.type === "income" ? "+" : "-"}${fmtMoney(txBaseAmount(t))}`).join("\n");
         return `Matched ${matches.length} entry(ies) for "${tokens.join(" ")}":\nOutflow: ${fmtMoney(mOut)} | Inflow: ${fmtMoney(mIn)}\n${sample}`;
       }
     }
@@ -3070,7 +3070,7 @@
       const pct = a.totalOut > 0 ? Math.round((c.total / a.totalOut) * 100) : 0;
       return `${i + 1}. ${c.icon} ${c.name}: ${fmtMoney(c.total)} (${pct}%)`;
     });
-    return `Spending Breakdown (${a.txCount} entries):\nâ€¢ ${curM ? `Latest Month (${curM.month}): In ${fmtMoney(curM.in)} / Out ${fmtMoney(curM.out)}` : ""}\nâ€¢ All-Time: In ${fmtMoney(a.totalIn)} | Out ${fmtMoney(a.totalOut)} | Savings Rate: ${a.savingsRate}%\n\nTop Categories:\n${catLines.join("\n")}`;
+    return `Spending Breakdown (${a.txCount} entries):\n• ${curM ? `Latest Month (${curM.month}): In ${fmtMoney(curM.in)} / Out ${fmtMoney(curM.out)}` : ""}\n• All-Time: In ${fmtMoney(a.totalIn)} | Out ${fmtMoney(a.totalOut)} | Savings Rate: ${a.savingsRate}%\n\nTop Categories:\n${catLines.join("\n")}`;
   }
 
   async function askLedgerFlowAI(question) {
@@ -3134,8 +3134,8 @@
           <div class="text-xs muted mt-1">Learns from your category edits offline (${Object.keys(state.settings.aiMemory || {}).length} learned payee(s)). Google Gemini is reserved strictly for analyzing &amp; checking PDF bank statements before pushing entries.</div>
         </div>
         <div class="flex-gap" style="flex-wrap:wrap;">
-          <button class="btn btn-secondary btn-sm" id="ai-open-importer-btn">ðŸ“„ Analyze PDF Statement</button>
-          <button class="btn btn-primary btn-sm" id="ai-clean-classify-btn">âœ¨ Clean Payees &amp; Auto-Classify</button>
+          <button class="btn btn-secondary btn-sm" id="ai-open-importer-btn">📄 Analyze PDF Statement</button>
+          <button class="btn btn-primary btn-sm" id="ai-clean-classify-btn">✨ Clean Payees &amp; Auto-Classify</button>
         </div>
       </div>
 
@@ -3191,7 +3191,7 @@
 
           <div class="card">
             <div class="card-header">
-              <div><h3 class="card-title">Quick Teach AI (${a.unlabelled.length} unlabelled)</h3><p class="card-subtitle">Assign once â€” LedgerFlow remembers permanently</p></div>
+              <div><h3 class="card-title">Quick Teach AI (${a.unlabelled.length} unlabelled)</h3><p class="card-subtitle">Assign once — LedgerFlow remembers permanently</p></div>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;">
               ${topUnlabelled.length ? topUnlabelled.map((u) => `
@@ -3201,7 +3201,7 @@
                     <div class="text-xs muted">${u.count}x &bull; <span class="money-val">${fmtMoney(u.total)}</span></div>
                   </div>
                   <select class="select-compact" data-teach-payee="${esc(u.key)}" style="max-width:155px;">
-                    <option value="">Teach categoryâ€¦</option>
+                    <option value="">Teach category…</option>
                     ${catOptionsHtml}
                   </select>
                 </div>
@@ -3222,7 +3222,7 @@
       renderAiAssistantView(root);
       const inp = document.getElementById("ai-chat-input");
       const sendBtn = document.getElementById("ai-chat-send-btn");
-      if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = "Thinkingâ€¦"; }
+      if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = "Thinking…"; }
       const ans = await askLedgerFlowAI(q);
       aiChatHistory.push({ role: "bot", text: ans.text, source: ans.source });
       renderAiAssistantView(root);
@@ -3246,16 +3246,16 @@
     document.getElementById("ai-clean-classify-btn").onclick = async () => {
       const btn = document.getElementById("ai-clean-classify-btn");
       btn.disabled = true;
-      btn.textContent = "Cleaning & Classifyingâ€¦";
+      btn.textContent = "Cleaning & Classifying…";
       try {
         const res = await runSmartPayeeCleanupAndClassify((m) => { btn.textContent = m; });
         renderAiAssistantView(root);
-        toast(`âœ¨ Cleaned ${res.cleaned} payee(s) & classified ${res.classified} entry(ies) via ${res.source}.`);
+        toast(`✨ Cleaned ${res.cleaned} payee(s) & classified ${res.classified} entry(ies) via ${res.source}.`);
       } catch (err) {
         toast("Cleanup error: " + err.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = "âœ¨ Clean Payees & Auto-Classify";
+        btn.textContent = "✨ Clean Payees & Auto-Classify";
       }
     };
     root.querySelectorAll("[data-teach-payee]").forEach((sel) => {
@@ -3289,15 +3289,15 @@
           <div class="field mb-3">
             <label>Primary Display Currency</label>
             <select id="set-currency">
-              ${Object.entries(CURRENCIES).map(([code, info]) => `<option value="${code}" ${state.settings.currency === code ? "selected" : ""}>${code} (${info.symbol}) â€” ${info.name}</option>`).join("")}
+              ${Object.entries(CURRENCIES).map(([code, info]) => `<option value="${code}" ${state.settings.currency === code ? "selected" : ""}>${code} (${info.symbol}) — ${info.name}</option>`).join("")}
             </select>
           </div>
           <div class="field mb-3">
             <label>Add Custom Category</label>
             <div class="input-group cat-add-group">
-              <input id="new-cat-icon" style="width:62px;text-align:center;" value="âœ¨" maxlength="2" />
-              <input id="new-cat-name" placeholder="Category name (e.g. Pets, Childcare)" />
-              <select id="new-cat-type" style="width:120px;"><option value="expense">Expense</option><option value="income">Income</option></select>
+              <input id="new-cat-icon" style="width:62px;text-align:center;" value="✨" maxlength="2" />
+              <input id="new-cat-name" placeholder="Category name (e.g. Pets, Childcare)" style="min-width:150px;flex:1;" />
+              <select id="new-cat-type" style="width:115px;min-width:115px;flex-shrink:0;"><option value="expense">Expense</option><option value="income">Income</option></select>
               <button class="btn btn-secondary btn-sm" id="add-cat-btn">Add</button>
             </div>
           </div>
@@ -3312,7 +3312,7 @@
             <div class="flex-between" style="padding:12px;border:1px solid var(--border);border-radius:10px;gap:10px;flex-wrap:wrap;">
               <div>
                 <strong>Biometric Unlock (Fingerprint / Face / Hello)</strong>
-                <div class="text-xs muted">${state.settings.biometricLock ? "Active â€” device biometrics required on launch" : "Off â€” enable quick biometric unlock without a password"}</div>
+                <div class="text-xs muted">${state.settings.biometricLock ? "Active — device biometrics required on launch" : "Off — enable quick biometric unlock without a password"}</div>
               </div>
               <button class="btn ${state.settings.biometricLock ? "btn-danger" : "btn-primary"} btn-sm" id="toggle-biometric-btn">${state.settings.biometricLock ? "Disable Biometrics" : "Enable Biometrics"}</button>
             </div>
@@ -3320,7 +3320,7 @@
             <div class="flex-between" style="padding:12px;border:1px solid var(--border);border-radius:10px;gap:10px;flex-wrap:wrap;">
               <div>
                 <strong>Optional App Password Lock</strong>
-                <div class="text-xs muted">${state.settings.pinHash ? "Custom password is active" : "No password â€” app opens directly"}</div>
+                <div class="text-xs muted">${state.settings.pinHash ? "Custom password is active" : "No password — app opens directly"}</div>
               </div>
               <div class="flex-gap">
                 <button class="btn btn-secondary btn-sm" id="set-pin-btn">${state.settings.pinHash ? "Change Password" : "Set Password"}</button>
@@ -3370,7 +3370,7 @@
       <div class="card mt-4">
         <div class="card-header">
           <div>
-            <h3 class="card-title">âœ¨ PDF Statement Analyzer (Built-in Brain + Free Google Gemini)</h3>
+            <h3 class="card-title">✨ PDF Statement Analyzer (Built-in Brain + Free Google Gemini)</h3>
             <p class="card-subtitle">Gemini is used only to analyze and verify PDF/bank statements before pushing entries into your ledger (not as a chatbot)</p>
           </div>
           <span class="tag-chip">${Object.keys(state.settings.aiMemory || {}).length} learned payee(s)</span>
@@ -3386,7 +3386,7 @@
               <option value="none" ${(state.settings.aiConfig?.provider || "none") === "none" ? "selected" : ""}>Built-in Offline Intelligence Only (Free, Zero Internet)</option>
               <option value="gemini" ${state.settings.aiConfig?.provider === "gemini" ? "selected" : ""}>Google Gemini API (Free Tier Supported)</option>
               <option value="openai" ${state.settings.aiConfig?.provider === "openai" ? "selected" : ""}>OpenAI / OpenAI-Compatible API</option>
-              <option value="ollama" ${state.settings.aiConfig?.provider === "ollama" ? "selected" : ""}>Local LLM (Ollama / LM Studio â€” Free Offline)</option>
+              <option value="ollama" ${state.settings.aiConfig?.provider === "ollama" ? "selected" : ""}>Local LLM (Ollama / LM Studio — Free Offline)</option>
             </select>
           </div>
           <div class="field">
@@ -3417,14 +3417,14 @@
         </div>
         <div class="field mt-3">
           <label>Custom AI Instructions / Rules (Plain English)</label>
-          <textarea id="set-ai-prompt" rows="2" placeholder="e.g. Treat transfers to Rahul as Rent & Housing (fixed). Flag electronics purchases over â‚¹5000 as Special. Classify Vishal/Zudio as Shopping.">${esc(state.settings.aiConfig?.customPrompt || "")}</textarea>
+          <textarea id="set-ai-prompt" rows="2" placeholder="e.g. Treat transfers to Rahul as Rent & Housing (fixed). Flag electronics purchases over ₹5000 as Special. Classify Vishal/Zudio as Shopping.">${esc(state.settings.aiConfig?.customPrompt || "")}</textarea>
         </div>
         <div class="flex-between mt-3" style="flex-wrap:wrap;gap:10px;">
-          <div class="text-xs muted" id="ai-status-msg">Ready â€” Local payee learning is always active.</div>
+          <div class="text-xs muted" id="ai-status-msg">Ready — Local payee learning is always active.</div>
           <div class="flex-gap" style="flex-wrap:wrap;">
             <button type="button" class="btn btn-ghost btn-sm" id="ai-clear-mem-btn">Reset Learned Memory</button>
             <button type="button" class="btn btn-secondary btn-sm" id="ai-test-btn">Save &amp; Test AI</button>
-            <button type="button" class="btn btn-primary btn-sm" id="ai-reclassify-all-btn">âœ¨ Re-Classify All Entries</button>
+            <button type="button" class="btn btn-primary btn-sm" id="ai-reclassify-all-btn">✨ Re-Classify All Entries</button>
           </div>
         </div>
       </div>
@@ -3432,7 +3432,7 @@
       <div class="card mt-4">
         <div class="card-header">
           <div>
-            <h3 class="card-title">ðŸ“‘ Bank Statement Import Logs (${(state.importLogs || []).length})</h3>
+            <h3 class="card-title">📑 Bank Statement Import Logs (${(state.importLogs || []).length})</h3>
             <p class="card-subtitle">Delete an individual import batch (e.g., if uploaded to the wrong bank) and re-upload cleanly to the right account</p>
           </div>
           <button type="button" class="btn btn-secondary btn-sm" id="set-open-importer-btn">+ Upload Statement</button>
@@ -3445,8 +3445,8 @@
       <div class="card mt-4">
         <div class="card-header">
           <div>
-            <h3 class="card-title">ðŸ”„ App Updates &amp; GitHub Link</h3>
-            <p class="card-subtitle">Installed version <strong>v${APP_VERSION}</strong> â€¢ Linked repo <code>${GITHUB_REPO}</code></p>
+            <h3 class="card-title">🔄 App Updates &amp; GitHub Link</h3>
+            <p class="card-subtitle">Installed version <strong>v${APP_VERSION}</strong> • Linked repo <code>${GITHUB_REPO}</code></p>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="btn btn-secondary btn-sm" id="check-update-btn">Check for Updates</button>
@@ -3455,7 +3455,7 @@
         </div>
         <div class="form-row">
           <div class="form-group" style="flex:1;">
-            <label>GitHub Access Token (optional â€” only needed if repo is Private)</label>
+            <label>GitHub Access Token (optional — only needed if repo is Private)</label>
             <input type="password" id="set-gh-token" value="${esc(state.settings.githubToken || "")}" placeholder="ghp_... (leave blank for Public repo)" autocomplete="off">
           </div>
           <div style="display:flex;align-items:flex-end;">
@@ -3485,7 +3485,7 @@
     if (chkUpdBtn) {
       chkUpdBtn.onclick = async () => {
         const msgEl = document.getElementById("update-status-msg");
-        if (msgEl) msgEl.textContent = "Checking GitHub for updatesâ€¦";
+        if (msgEl) msgEl.textContent = "Checking GitHub for updates…";
         chkUpdBtn.disabled = true;
         const res = await checkForAppUpdates(false);
         chkUpdBtn.disabled = false;
@@ -3515,7 +3515,7 @@
       if (!name) return;
       state.categories.push({
         id: uid("cat"), name,
-        icon: document.getElementById("new-cat-icon").value || "âœ¨",
+        icon: document.getElementById("new-cat-icon").value || "✨",
         color: "#6366f1", type: document.getElementById("new-cat-type").value
       });
       saveState(); renderSettingsView(root); toast("Category added.");
@@ -3595,7 +3595,7 @@
     document.getElementById("load-demo-btn").onclick = () => { state = createDemoData(); saveState(); switchView("overview"); toast("Sample data loaded."); };
     document.getElementById("wipe-empty-btn").onclick = () => {
       state = createBlankState(state.settings);
-      saveState(); switchView("overview"); toast("Vault cleared â€” all balances reset to zero.");
+      saveState(); switchView("overview"); toast("Vault cleared — all balances reset to zero.");
     };
 
     const syncAiConfigFromInputs = () => {
@@ -3641,11 +3641,11 @@
         statusEl.textContent = "Offline Local AI active (" + Object.keys(state.settings.aiMemory || {}).length + " learned patterns).";
         return toast("Offline Local AI settings saved.");
       }
-      statusEl.textContent = "Testing " + cfg.provider + " connectionâ€¦";
+      statusEl.textContent = "Testing " + cfg.provider + " connection…";
       try {
         const sample = [{ id: "test_1", type: "expense", date: todayISO() + "T12:00", amount: 450, currency: state.settings.currency, payee: "APOLLO PHARMACY", notes: "UPI/DR/123/APOLLO/YESB/apollo@ybl/medicines" }];
         const out = await classifyBatchWithLLM(sample, cfg);
-        statusEl.textContent = "Connected âœ“ (" + (out[0]?.category || "ok") + " â€” " + (out[0]?.costNature || "variable") + ")";
+        statusEl.textContent = "Connected ✓ (" + (out[0]?.category || "ok") + " — " + (out[0]?.costNature || "variable") + ")";
         toast("AI connection verified successfully!");
       } catch (err) {
         statusEl.textContent = "Connection error: " + err.message;
@@ -3657,7 +3657,7 @@
       const btn = document.getElementById("ai-reclassify-all-btn");
       const statusEl = document.getElementById("ai-status-msg");
       btn.disabled = true;
-      btn.textContent = "Running AIâ€¦";
+      btn.textContent = "Running AI…";
       try {
         const res = await runHybridAIClassification(state.transactions || [], {
           onlyUncertain: state.settings.aiConfig.mode !== "llm_all",
@@ -3665,13 +3665,13 @@
         });
         await saveState();
         statusEl.textContent = `Updated ${res.updated} transaction(s) via ${res.source}.`;
-        toast(`âœ¨ Re-classified ${res.updated} transaction(s)!`);
+        toast(`✨ Re-classified ${res.updated} transaction(s)!`);
       } catch (err) {
         statusEl.textContent = "Error: " + err.message;
         toast("AI re-classify failed: " + err.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = "âœ¨ Re-Classify All Entries";
+        btn.textContent = "✨ Re-Classify All Entries";
       }
     };
   }
@@ -3713,8 +3713,8 @@
     document.getElementById("tx-cost-nature").value = tx && tx.costNature ? tx.costNature : "auto";
     const ledSel = document.getElementById("tx-ledger");
     if (ledSel) {
-      ledSel.innerHTML = `<option value="">â€” Bank General (No Separate Ledger) â€”</option>`
-        + (state.ledgers || []).map((l) => `<option value="${l.id}">${l.type === "drawings" ? "ðŸ’¸ " : "ðŸ‘¤ "}${esc(l.name)}</option>`).join("");
+      ledSel.innerHTML = `<option value="">— Bank General (No Separate Ledger) —</option>`
+        + (state.ledgers || []).map((l) => `<option value="${l.id}">${l.type === "drawings" ? "💸 " : "👤 "}${esc(l.name)}</option>`).join("");
       ledSel.value = tx && tx.ledgerId ? tx.ledgerId : "";
     }
     document.getElementById("tx-tags").value = tx ? (tx.tags || []).join(", ") : "";
@@ -3752,7 +3752,7 @@
     const hint = document.getElementById("tx-fx-hint");
     if (cur !== state.settings.currency && amt > 0) {
       hint.classList.remove("hidden");
-      hint.textContent = `â‰ˆ ${fmtMoney(convertToBase(amt, cur))} in ${state.settings.currency}`;
+      hint.textContent = `≈ ${fmtMoney(convertToBase(amt, cur))} in ${state.settings.currency}`;
     } else {
       hint.classList.add("hidden");
     }
@@ -4354,10 +4354,10 @@
 
     // Weekly breakdown for selected month
     const weeks = [
-      { label: "Week 1 (1â€“7)", min: 1, max: 7 },
-      { label: "Week 2 (8â€“14)", min: 8, max: 14 },
-      { label: "Week 3 (15â€“21)", min: 15, max: 21 },
-      { label: "Week 4+ (22â€“End)", min: 22, max: 31 }
+      { label: "Week 1 (1–7)", min: 1, max: 7 },
+      { label: "Week 2 (8–14)", min: 8, max: 14 },
+      { label: "Week 3 (15–21)", min: 15, max: 21 },
+      { label: "Week 4+ (22–End)", min: 22, max: 31 }
     ].map((w) => {
       const wItems = cur.enriched.filter((e) => {
         const d = new Date(e.tx.date).getDate();
@@ -4405,7 +4405,7 @@
       narrative.push(`In <strong>${esc(cur.label)}</strong>, total inflow was <strong class="amount-income money-val">${fmtMoney(cur.totalIncome)}</strong> and total outflow was <strong class="money-val">${fmtMoney(cur.totalExpense)}</strong>, leaving a net ${cur.net >= 0 ? "surplus" : "deficit"} of <strong class="money-val">${fmtMoney(cur.net, null, true)}</strong> (${cur.savingsRate}% savings rate).`);
       narrative.push(`Cost structure: <strong>${fixedPct}% Fixed</strong> (<span class="money-val">${fmtMoney(cur.fixedTotal)}</span>) vs <strong>${varPct}% Variable</strong> (<span class="money-val">${fmtMoney(cur.variableTotal)}</span>). Fixed obligations absorb <strong>${fixedIncomeCov}%</strong> of this month's income.`);
       if (cur.pettyItems.length) {
-        narrative.push(`Petty spending (â‰¤ ${fmtMoney(cur.pettyMax)}): <strong>${cur.pettyItems.length} small transactions</strong> added up to <strong class="money-val">${fmtMoney(cur.pettyTotal)}</strong> (${cur.totalExpense > 0 ? Math.round((cur.pettyTotal / cur.totalExpense) * 100) : 0}% of total spend).`);
+        narrative.push(`Petty spending (≤ ${fmtMoney(cur.pettyMax)}): <strong>${cur.pettyItems.length} small transactions</strong> added up to <strong class="money-val">${fmtMoney(cur.pettyTotal)}</strong> (${cur.totalExpense > 0 ? Math.round((cur.pettyTotal / cur.totalExpense) * 100) : 0}% of total spend).`);
       }
       if (cur.specialItems.length) {
         narrative.push(`Special / one-off outlays: <strong>${cur.specialItems.length} item(s)</strong> totaling <strong class="money-val">${fmtMoney(cur.specialTotal)}</strong>. Excluding special spikes, baseline monthly burn was <strong class="money-val">${fmtMoney(cur.normalizedExpense)}</strong>.`);
@@ -4437,9 +4437,9 @@
           <button class="btn btn-secondary btn-sm" id="mi-next-month">Next &rarr;</button>
         </div>
         <div class="threshold-inline text-xs">
-          <span class="muted">Petty â‰¤</span>
+          <span class="muted">Petty ≤</span>
           <input id="mi-petty-max" type="number" min="10" step="50" value="${cur.pettyMax}" />
-          <span class="muted">Big â‰¥</span>
+          <span class="muted">Big ≥</span>
           <input id="mi-big-min" type="number" min="100" step="250" value="${cur.bigMin}" />
           <button class="btn btn-secondary btn-xs" id="mi-apply-thresholds">Apply</button>
         </div>
@@ -4447,7 +4447,7 @@
 
       <div class="narrative-box">
         <div class="flex-between">
-          <strong class="text-sm">Executive Summary â€” ${esc(cur.label)}</strong>
+          <strong class="text-sm">Executive Summary — ${esc(cur.label)}</strong>
           <span class="tag-chip">${cur.incomes.length} credits &bull; ${cur.expenses.length} debits</span>
         </div>
         ${narrative.map((line) => `<div class="text-sm">${line}</div>`).join("")}
@@ -4525,18 +4525,18 @@
       <!-- Petty, Regular, Big & Special Expense Tiers -->
       <div class="kpi-grid mb-4">
         <div class="kpi-card">
-          <div class="kpi-top"><span class="kpi-label">Petty Expenses (â‰¤ ${fmtMoney(cur.pettyMax)})</span><span class="badge tier-petty">${cur.pettyItems.length}</span></div>
+          <div class="kpi-top"><span class="kpi-label">Petty Expenses (≤ ${fmtMoney(cur.pettyMax)})</span><span class="badge tier-petty">${cur.pettyItems.length}</span></div>
           <div class="kpi-val money-val">${fmtMoney(cur.pettyTotal)}</div>
           <div class="kpi-foot"><span>${cur.totalExpense ? Math.round((cur.pettyTotal / cur.totalExpense) * 100) : 0}% of spend &bull; Avg ${fmtMoney(cur.pettyItems.length ? cur.pettyTotal / cur.pettyItems.length : 0)}</span></div>
           ${topPetty.length ? `<div class="text-xs muted mt-2">Top: ${topPetty.map(([n, v]) => `${esc(n)} (${v.count}x)`).join(", ")}</div>` : ""}
         </div>
         <div class="kpi-card">
-          <div class="kpi-top"><span class="kpi-label">Regular (${fmtMoney(cur.pettyMax + 1)}â€“${fmtMoney(cur.bigMin - 1)})</span><span class="badge tier-regular">${cur.regularItems.length}</span></div>
+          <div class="kpi-top"><span class="kpi-label">Regular (${fmtMoney(cur.pettyMax + 1)}–${fmtMoney(cur.bigMin - 1)})</span><span class="badge tier-regular">${cur.regularItems.length}</span></div>
           <div class="kpi-val money-val">${fmtMoney(cur.regularTotal)}</div>
           <div class="kpi-foot"><span>${cur.totalExpense ? Math.round((cur.regularTotal / cur.totalExpense) * 100) : 0}% of spend &bull; Mid-size routine</span></div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-top"><span class="kpi-label">Big Expenses (â‰¥ ${fmtMoney(cur.bigMin)})</span><span class="badge tier-big">${cur.bigItems.length}</span></div>
+          <div class="kpi-top"><span class="kpi-label">Big Expenses (≥ ${fmtMoney(cur.bigMin)})</span><span class="badge tier-big">${cur.bigItems.length}</span></div>
           <div class="kpi-val money-val">${fmtMoney(cur.bigTotal)}</div>
           <div class="kpi-foot"><span>${cur.totalExpense ? Math.round((cur.bigTotal / cur.totalExpense) * 100) : 0}% of spend &bull; High-ticket outlays</span></div>
         </div>
@@ -4609,7 +4609,7 @@
         <div class="card-header" style="flex-wrap:wrap;">
           <div>
             <h3 class="card-title">Itemized Expense Bifurcation (${esc(cur.label)})</h3>
-            <p class="card-subtitle">Click Fixed/Variable or â˜… Special on any row to fine-tune classification</p>
+            <p class="card-subtitle">Click Fixed/Variable or ★ Special on any row to fine-tune classification</p>
           </div>
           <div class="tier-tabs">
             <button class="tier-tab ${monthlyTierFilter === "all" ? "active" : ""}" data-tier="all">All (${cur.enriched.length})</button>
@@ -4618,7 +4618,7 @@
             <button class="tier-tab ${monthlyTierFilter === "petty" ? "active" : ""}" data-tier="petty">Petty (${cur.pettyItems.length})</button>
             <button class="tier-tab ${monthlyTierFilter === "regular" ? "active" : ""}" data-tier="regular">Regular (${cur.regularItems.length})</button>
             <button class="tier-tab ${monthlyTierFilter === "big" ? "active" : ""}" data-tier="big">Big (${cur.bigItems.length})</button>
-            <button class="tier-tab ${monthlyTierFilter === "special" ? "active" : ""}" data-tier="special">â˜… Special (${cur.specialItems.length})</button>
+            <button class="tier-tab ${monthlyTierFilter === "special" ? "active" : ""}" data-tier="special">★ Special (${cur.specialItems.length})</button>
           </div>
         </div>
         <div class="table-wrap" style="max-height:420px;">
@@ -4641,7 +4641,7 @@
                     <td>
                       <span class="badge tier-${e.sizeTier}">${tierLabel}</span>
                       <button class="btn btn-xs ${e.isSpecial ? "tier-special" : "btn-ghost"}" data-toggle-special="${e.tx.id}" data-cur-special="${e.isSpecial ? "1" : "0"}" title="Toggle Special / One-off">
-                        ${e.isSpecial ? "â˜… Special" : "â˜†"}
+                        ${e.isSpecial ? "★ Special" : "☆"}
                       </button>
                     </td>
                     <td class="text-right money-val"><strong>${fmtMoney(e.amt)}</strong></td>
@@ -5448,7 +5448,7 @@
     }
     if (!ok) {
       if (subEl && reasonMsg) subEl.textContent = reasonMsg;
-      if (statusEl) statusEl.textContent = "Offline â€” waiting for active internet connectionâ€¦";
+      if (statusEl) statusEl.textContent = "Offline — waiting for active internet connection…";
       if (!netPollTimer) {
         netPollTimer = setInterval(async () => {
           const recovered = await checkLiveInternetConnection();
@@ -5484,6 +5484,8 @@
   }
 
   function renderAppUpdateBanner() {
+    const dot = document.getElementById("topbar-update-dot");
+    if (dot) dot.classList.toggle("hidden", !(latestUpdateInfo && latestUpdateInfo.hasUpdate));
     const banner = document.getElementById("app-update-banner");
     if (!banner) return;
     if (!latestUpdateInfo || !latestUpdateInfo.hasUpdate || updateBannerDismissed) {
@@ -5494,9 +5496,45 @@
     const notesEl = document.getElementById("app-update-notes");
     const btnEl = document.getElementById("app-update-install-btn");
     if (titleEl) titleEl.textContent = `Update Available: LedgerFlow v${latestUpdateInfo.version}`;
-    if (notesEl) notesEl.textContent = latestUpdateInfo.notes ? String(latestUpdateInfo.notes).slice(0, 140) : `Installed v${APP_VERSION} â†’ GitHub v${latestUpdateInfo.version}`;
-    if (btnEl) btnEl.textContent = isAndroidHost ? "Download APK Update" : "Update & Restart";
+    if (notesEl) notesEl.textContent = latestUpdateInfo.notes ? String(latestUpdateInfo.notes).slice(0, 140) : `Installed v${APP_VERSION} → GitHub v${latestUpdateInfo.version}`;
+    if (btnEl) btnEl.textContent = "Install Update Now";
     banner.classList.remove("hidden");
+  }
+
+  async function openInteractiveUpdateModal() {
+    openSubModal("Software & App Updates", `
+      <div id="upd-modal-body" style="display:flex;flex-direction:column;gap:12px;">
+        <div class="text-sm">Installed version: <strong>v${APP_VERSION}</strong></div>
+        <div id="upd-modal-status" class="info-banner text-sm">⏳ Checking GitHub Releases (<code>${GITHUB_REPO}</code>)…</div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close="sub-modal">Close</button>
+          <button type="button" class="btn btn-primary hidden" id="upd-modal-install-btn">Install Update Now</button>
+        </div>
+      </div>`);
+    const res = await checkForAppUpdates(true);
+    const stEl = document.getElementById("upd-modal-status");
+    const instBtn = document.getElementById("upd-modal-install-btn");
+    if (!stEl) return;
+    if (!res || !res.ok) {
+      stEl.textContent = res?.error || "Could not check GitHub updates. Check your internet connection.";
+      return;
+    }
+    if (res.hasUpdate) {
+      stEl.innerHTML = `<strong>New Version Available: v${esc(res.version)}</strong><div class="text-xs muted mt-1">${esc(res.notes || "Latest Windows installer & Android APK ready on GitHub.")}</div>`;
+      if (instBtn) {
+        instBtn.textContent = isAndroidHost ? `Download & Install v${res.version}` : `Update & Restart to v${res.version}`;
+        instBtn.classList.remove("hidden");
+        instBtn.onclick = async () => {
+          instBtn.disabled = true;
+          instBtn.textContent = "Downloading & Installing…";
+          await triggerAppUpdateInstall();
+          instBtn.disabled = false;
+          instBtn.textContent = isAndroidHost ? `Download & Install v${res.version}` : `Update & Restart to v${res.version}`;
+        };
+      }
+    } else {
+      stEl.innerHTML = `✓ You are already on the latest version (<strong>v${APP_VERSION}</strong>).`;
+    }
   }
 
   async function checkForAppUpdates(silent = true) {
@@ -5572,20 +5610,37 @@
       ? (latestUpdateInfo.androidUrl || latestUpdateInfo.releaseUrl)
       : (latestUpdateInfo.windowsUrl || latestUpdateInfo.releaseUrl);
     if (!targetUrl) {
-      toast("No release package URL found. Opening GitHub Releasesâ€¦", true);
+      toast("No release package URL found. Opening GitHub Releases…", true);
       return;
     }
-    if (isAndroidHost && window.LedgerFlowAndroid && typeof window.LedgerFlowAndroid.openExternalUrl === "function") {
-      window.LedgerFlowAndroid.openExternalUrl(targetUrl);
-      toast("Opening GitHub APK download in browserâ€¦");
-      return;
+    if (isAndroidHost && window.LedgerFlowAndroid) {
+      if (typeof window.LedgerFlowAndroid.downloadAndInstallApkAsync === "function") {
+        toast(`Downloading LedgerFlow v${latestUpdateInfo.version} APK…`);
+        try {
+          const raw = await callAndroidAsync("downloadAndInstallApkAsync", [targetUrl, ghToken]);
+          const res = JSON.parse(raw || "{}");
+          if (res && res.ok) {
+            toast("Update downloaded! Confirm Install on screen.");
+          } else {
+            toast(res?.error || "Could not launch APK installer.");
+          }
+        } catch (e) {
+          toast("APK update failed: " + (e?.message || e));
+        }
+        return;
+      }
+      if (typeof window.LedgerFlowAndroid.openExternalUrl === "function") {
+        window.LedgerFlowAndroid.openExternalUrl(targetUrl);
+        toast("Opening GitHub APK download…");
+        return;
+      }
     }
     if (isDesktopHost) {
       if (!/\.exe(\?|$)/i.test(targetUrl)) {
         window.open(targetUrl, "_blank");
         return;
       }
-      toast("Downloading update installerâ€¦ LedgerFlow will restart automatically.");
+      toast("Downloading update installer… LedgerFlow will restart automatically.");
       try {
         const res = await apiFetch("/api/install-update", {
           method: "POST",
@@ -5637,7 +5692,7 @@
     let llmUpdated = 0;
     for (let i = 0; i < targets.length; i += batchSize) {
       const batch = targets.slice(i, i + batchSize);
-      if (opts.onProgress) opts.onProgress(`Analyzing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(targets.length / batchSize)} with ${cfg.provider}â€¦`);
+      if (opts.onProgress) opts.onProgress(`Analyzing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(targets.length / batchSize)} with ${cfg.provider}…`);
       const results = await classifyBatchWithLLM(batch, cfg);
       for (const r of results) {
         const tx = batch[Number(r.idx)];
@@ -5994,9 +6049,9 @@
     if (!entries.length) return toast("No parsed entries to verify.");
     if (repEl) {
       repEl.className = "mb-3";
-      repEl.innerHTML = `â³ <strong>Gemini PDF Check:</strong> Analyzing ${entries.length} extracted entry(ies) before pushing to your ledgerâ€¦`;
+      repEl.innerHTML = `⏳ <strong>Gemini PDF Check:</strong> Analyzing ${entries.length} extracted entry(ies) before pushing to your ledger…`;
     }
-    if (chkBtn) { chkBtn.disabled = true; chkBtn.textContent = "Checking PDFâ€¦"; }
+    if (chkBtn) { chkBtn.disabled = true; chkBtn.textContent = "Checking PDF…"; }
 
     try {
       const catIds = (state.categories || []).map((c) => `${c.id} (${c.type})`).join(", ");
@@ -6067,14 +6122,14 @@
           : "";
         repEl.className = "mb-3";
         repEl.style.borderColor = warnings.length ? "var(--amber)" : "var(--emerald)";
-        repEl.innerHTML = `<strong>âœ“ Gemini (${esc(gRes.model)}) Pre-Import Check:</strong> ${esc(obj.summary || `Verified ${entries.length} entry(ies)`)}${fixCount ? ` â€¢ Refined ${fixCount} row(s)` : ""}. Review below and click <strong>Auto-Enter Entries</strong>.${warnHtml}`;
+        repEl.innerHTML = `<strong>✓ Gemini (${esc(gRes.model)}) Pre-Import Check:</strong> ${esc(obj.summary || `Verified ${entries.length} entry(ies)`)}${fixCount ? ` • Refined ${fixCount} row(s)` : ""}. Review below and click <strong>Auto-Enter Entries</strong>.${warnHtml}`;
       }
       toast(`Gemini checked ${entries.length} PDF entry(ies)${fixCount ? ` (${fixCount} refined)` : ""}.`);
     } catch (err) {
       if (repEl) {
         repEl.className = "mb-3";
         repEl.style.borderColor = "var(--amber)";
-        repEl.innerHTML = `<strong>Gemini Check Note:</strong> ${esc(err?.message || "Could not verify right now")} â€” you can still inspect the parsed table below and tap <strong>Auto-Enter Entries</strong>.`;
+        repEl.innerHTML = `<strong>Gemini Check Note:</strong> ${esc(err?.message || "Could not verify right now")} — you can still inspect the parsed table below and tap <strong>Auto-Enter Entries</strong>.`;
       }
     } finally {
       if (chkBtn) { chkBtn.disabled = false; chkBtn.textContent = "Check PDF with Gemini"; }
@@ -6230,7 +6285,7 @@
     let pendingRow = null;
     let upcomingPreLines = [];
     let inSummaryBlock = false;
-    const isDashPlaceholder = (s) => /^[-â€“â€”]+(?:\s+[-â€“â€”]+)*$/.test(s) || /^(na|n\/a|nil)$/i.test(s);
+    const isDashPlaceholder = (s) => /^[-–—]+(?:\s+[-–—]+)*$/.test(s) || /^(na|n\/a|nil)$/i.test(s);
     const newTxPrefixRe = /^(WDL\s+TFR|DEP\s+TFR|POS\s+ATM(?:\s+PURCH)?|ATM\s+(?:WDL|CASH)|CASH\s+(?:DEP|WDL)|CREDIT\s+(?:Chq|TFR|TRANSFER)|DEBIT\s+(?:Chq|TFR|TRANSFER)|CEMTEX\s+DEP|BY\s+TRANSFER|TO\s+TRANSFER|BULK\s+POSTING|CLG\s+CHQ|INTEREST\s+CREDIT|UPI\/(?:DR|CR|REV|DRC|REVERSAL|REF)\/|IMPS\/|NEFT[\*\/\-]|RTGS[\*\/\-]|ACH(?:DR|CR)?[\s\/\-]|NACH[\s\/\-])\b/i;
 
     const extractRowAmount = (r) => {
@@ -6348,7 +6403,7 @@
       const colRef = isDashPlaceholder(colRefRaw) ? "" : colRefRaw;
 
       if (!isoDate) {
-        if (absAmt < 0.01 && /^(value\s+date|post\s+date|txn\s+date|details|particulars|narration|ref\s*no\/?|cheque(\s*no)?|no\.?|debit|credit|balance|amount|â‚¹|-+|\s)+$/i.test(joined)) {
+        if (absAmt < 0.01 && /^(value\s+date|post\s+date|txn\s+date|details|particulars|narration|ref\s*no\/?|cheque(\s*no)?|no\.?|debit|credit|balance|amount|₹|-+|\s)+$/i.test(joined)) {
           continue;
         }
         const extra = rawNarrCell || extractExtraText(r);
@@ -6581,7 +6636,7 @@
       const expCred = sums.reduce((s, x) => s + x.totalCredits, 0);
       const ok = drCnt === expDr && crCnt === expCr && Math.abs(totalDebit - expDeb) < 0.05 && Math.abs(totalCredit - expCred) < 0.05;
       auditBadge = ok
-        ? `<span class="delta-pill delta-up">100% Bank Reconciled (${drCnt} Dr / ${crCnt} Cr) âœ“</span>`
+        ? `<span class="delta-pill delta-up">100% Bank Reconciled (${drCnt} Dr / ${crCnt} Cr) ✓</span>`
         : `<span class="delta-pill delta-down">Check: Bank ${expDr} Dr/${expCr} Cr vs Parsed ${drCnt} Dr/${crCnt} Cr</span>`;
     }
 
@@ -6861,7 +6916,7 @@
     const dateTokenSrc = String.raw`(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\s\-][A-Za-z]{3,9},?[\s\-]\d{2,4}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{2,4})`;
     const dateStartRe = new RegExp(String.raw`^(?:\d{1,4}[\s|]+)?` + dateTokenSrc + String.raw`\b`);
     const secondDateRe = new RegExp(String.raw`^(?:[\s|]+)` + dateTokenSrc + String.raw`\b`);
-    const amtTokenRe = /(?:â‚¹|INR|Rs\.?\s*)?(?:\d{1,3}(?:,\d{2,3})+|\d+)\.\d{1,2}(?:\s*\(?(?:CR|DR)\.?\)?)?/gi;
+    const amtTokenRe = /(?:₹|INR|Rs\.?\s*)?(?:\d{1,3}(?:,\d{2,3})+|\d+)\.\d{1,2}(?:\s*\(?(?:CR|DR)\.?\)?)?/gi;
     const grouped = [];
     for (const ln of rawLines) {
       if (/^(page\s*(no|\d+\s+of)|account statement|statement period|computer generated|branch details|customer details|abbreviations|brought forward|opening balance|closing balance)/i.test(ln)) continue;
@@ -6922,7 +6977,7 @@
         const isDrHint = /\b(dr|debit|withdrawal|upi\/dr|wdl\b|chrg|razorpay|payu|ccpmt|to transfer|atm)\b/i.test(hintStr);
         side = (isCrHint && !isDrHint) ? "cr" : "dr";
       }
-      const cleanAmt = cur.txAmtStr.replace(/\s*(CR|DR)\.?\s*$/i, "").replace(/^[â‚¹INRrs.\s]+/i, "").trim();
+      const cleanAmt = cur.txAmtStr.replace(/\s*(CR|DR)\.?\s*$/i, "").replace(/^[₹INRrs.\s]+/i, "").trim();
       out.push([cur.dateStr, cur.nar, side === "dr" ? cleanAmt : "", side === "cr" ? cleanAmt : "", cur.balStr]);
     }
     return out.length > 1 ? out : [];
@@ -7058,7 +7113,7 @@
             setTimeout(() => pwInput.focus(), 40);
             return;
           }
-          toast("ðŸ“„ Reading PDF bank statement locally...");
+          toast("📄 Reading PDF bank statement locally...");
           const res = await apiFetch("/api/parse-statement", {
             method: "POST",
             body: JSON.stringify({ fileName: file.name, base64: dataUrl, password: chosenPw })
@@ -7099,7 +7154,7 @@
           // If scanned PDF and external AI is configured, fall back to AI Vision/PDF OCR
           const aiCfg = state.settings.aiConfig || {};
           if (aiCfg.provider && aiCfg.provider !== "none" && aiCfg.mode !== "local") {
-            toast("ðŸ§  Scanned PDF detected â€” falling back to Vision AI...");
+            toast("🧠 Scanned PDF detected — falling back to Vision AI...");
             const ocrRes = await extractStatementViaOcrAi({ rawText: "", dataUrl, mimeType: "application/pdf", fileName: file.name });
             const meta = extractBankMeta(ocrRes.rows);
             meta.viaOcr = true;
@@ -7112,7 +7167,7 @@
         }
 
         // Browser preview fallback (no native host): decompress PDF locally in JS
-        toast("ðŸ“„ Reading PDF bank statement locally...");
+        toast("📄 Reading PDF bank statement locally...");
         const buf = await file.arrayBuffer();
         const rawLatin = new TextDecoder("latin1").decode(new Uint8Array(buf));
         if (/\/Encrypt\s+(\d+\s+\d+\s+R|<<)/.test(rawLatin)) {
@@ -7146,7 +7201,7 @@
 
     if (isImage) {
       try {
-        toast("ðŸ” Converting statement image via OCR + AI...");
+        toast("🔍 Converting statement image via OCR + AI...");
         const dataUrl = await readAsDataUrl(file);
         const ocrRes = await extractStatementViaOcrAi({
           rawText: "",
@@ -7201,7 +7256,7 @@
         const hIdx = detectHeaderRowIndex(parsedRows);
         if (parsedRows.length >= 2 && hIdx < 0) {
           try {
-            toast("ðŸ§  Non-standard statement format detected â€” normalizing...");
+            toast("🧠 Non-standard statement format detected — normalizing...");
             const ocrRes = await extractStatementViaOcrAi({ rows: parsedRows, fileName: file.name });
             const oMeta = extractBankMeta(parsedRows);
             oMeta.viaOcr = true;
@@ -7365,9 +7420,13 @@
 
   /* ---------- Event Wiring & Boot ---------- */
   function wireGlobalEvents() {
-    document.querySelectorAll("#nav-list .nav-item, .sidebar-footer .nav-item").forEach((btn) => {
+    document.querySelectorAll("#nav-list .nav-item, .sidebar-footer .nav-item[data-view]").forEach((btn) => {
       btn.onclick = () => switchView(btn.dataset.view);
     });
+    const sbUpdBtn = document.getElementById("sidebar-check-update-btn");
+    if (sbUpdBtn) sbUpdBtn.onclick = () => { closeMobileDrawer(); openInteractiveUpdateModal(); };
+    const tbUpdBtn = document.getElementById("topbar-update-btn");
+    if (tbUpdBtn) tbUpdBtn.onclick = () => openInteractiveUpdateModal();
     document.querySelectorAll("#mobile-bottom-nav .mobile-nav-item[data-view]").forEach((btn) => {
       btn.onclick = () => switchView(btn.dataset.view);
     });
@@ -7914,9 +7973,9 @@
     if (retryNetBtn) {
       retryNetBtn.onclick = async () => {
         const st = document.getElementById("net-lock-status");
-        if (st) st.textContent = "Checking network connectivityâ€¦";
+        if (st) st.textContent = "Checking network connectivity…";
         const ok = await verifyMandatoryOnlineGate();
-        if (!ok && st) st.textContent = "Still offline â€” please check Wi-Fi or mobile data.";
+        if (!ok && st) st.textContent = "Still offline — please check Wi-Fi or mobile data.";
       };
     }
     window.addEventListener("offline", () => { verifyMandatoryOnlineGate(); });

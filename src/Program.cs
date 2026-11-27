@@ -629,9 +629,14 @@ namespace LedgerFlowHost {
                 if (!string.IsNullOrEmpty(ghToken)) wc.Headers.Add("Authorization", "Bearer " + ghToken);
                 wc.DownloadFile(uri, tmpExe);
 
-                Process.Start(new ProcessStartInfo { FileName = tmpExe, UseShellExecute = true });
+                string installDir = Path.GetDirectoryName(Application.ExecutablePath);
+                Process.Start(new ProcessStartInfo {
+                    FileName = tmpExe,
+                    Arguments = string.Format("--quiet --dir=\"{0}\" --relaunch", installDir),
+                    UseShellExecute = true
+                });
                 ThreadPool.QueueUserWorkItem(_ => {
-                    Thread.Sleep(700);
+                    Thread.Sleep(500);
                     QuitApp();
                 });
                 return ser.Serialize(new Dictionary<string, object> { { "ok", true } });

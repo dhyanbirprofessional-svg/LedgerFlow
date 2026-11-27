@@ -6,8 +6,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $verJsonPath = Join-Path $root "version.json"
-$verObj = Get-Content $verJsonPath -Raw | ConvertFrom-Json
+$verObj = [System.IO.File]::ReadAllText($verJsonPath, $utf8NoBom) | ConvertFrom-Json
 
 if (-not $Version) {
     $parts = ($verObj.version -split "\.") | ForEach-Object { [int]$_ }
@@ -25,35 +26,35 @@ Write-Output "Publishing LedgerFlow v$Version..."
 # 1. Update version.json
 $verObj.version = $Version
 $verObj.notes = $Notes
-($verObj | ConvertTo-Json -Depth 4) | Set-Content -Path $verJsonPath -Encoding UTF8
+[System.IO.File]::WriteAllText($verJsonPath, ($verObj | ConvertTo-Json -Depth 4), $utf8NoBom)
 
 # 2. Update src/ui/app.js APP_VERSION
 $appJsPath = Join-Path $root "src\ui\app.js"
-$appJs = Get-Content $appJsPath -Raw
+$appJs = [System.IO.File]::ReadAllText($appJsPath, $utf8NoBom)
 $appJs = [regex]::Replace($appJs, 'const APP_VERSION = "[^"]+";', "const APP_VERSION = `"$Version`";")
-Set-Content -Path $appJsPath -Value $appJs -Encoding UTF8 -NoNewline
+[System.IO.File]::WriteAllText($appJsPath, $appJs, $utf8NoBom)
 
 # 3. Update AssemblyInfo.cs & SetupAssemblyInfo.cs & Setup.cs
 foreach ($asmFile in @("src\AssemblyInfo.cs", "installer\SetupAssemblyInfo.cs")) {
     $p = Join-Path $root $asmFile
-    $txt = Get-Content $p -Raw
+    $txt = [System.IO.File]::ReadAllText($p, $utf8NoBom)
     $txt = [regex]::Replace($txt, 'AssemblyVersion\("[^"]+"\)', "AssemblyVersion(`"$Version.0`")")
     $txt = [regex]::Replace($txt, 'AssemblyFileVersion\("[^"]+"\)', "AssemblyFileVersion(`"$Version.0`")")
-    Set-Content -Path $p -Value $txt -Encoding UTF8 -NoNewline
+    [System.IO.File]::WriteAllText($p, $txt, $utf8NoBom)
 }
 $setupCsPath = Join-Path $root "installer\Setup.cs"
-$setupCs = Get-Content $setupCsPath -Raw
+$setupCs = [System.IO.File]::ReadAllText($setupCsPath, $utf8NoBom)
 $setupCs = [regex]::Replace($setupCs, 'private const string AppVersion = "[^"]+";', "private const string AppVersion = `"$Version`";")
-Set-Content -Path $setupCsPath -Value $setupCs -Encoding UTF8 -NoNewline
+[System.IO.File]::WriteAllText($setupCsPath, $setupCs, $utf8NoBom)
 
 # 4. Update AndroidManifest.xml (versionName & increment versionCode)
 $manifestPath = Join-Path $root "android\AndroidManifest.xml"
-$manifest = Get-Content $manifestPath -Raw
+$manifest = [System.IO.File]::ReadAllText($manifestPath, $utf8NoBom)
 $vcMatch = [regex]::Match($manifest, 'android:versionCode="(\d+)"')
 $nextCode = if ($vcMatch.Success) { [int]$vcMatch.Groups[1].Value + 1 } else { 2 }
 $manifest = [regex]::Replace($manifest, 'android:versionCode="\d+"', "android:versionCode=`"$nextCode`"")
 $manifest = [regex]::Replace($manifest, 'android:versionName="[^"]+"', "android:versionName=`"$Version`"")
-Set-Content -Path $manifestPath -Value $manifest -Encoding UTF8 -NoNewline
+[System.IO.File]::WriteAllText($manifestPath, $manifest, $utf8NoBom)
 
 # 5. Build Windows installer, Android APK, and run self-test
 powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "build.ps1")

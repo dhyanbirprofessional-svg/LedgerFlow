@@ -20,6 +20,7 @@ import android.os.Bundle;
 import android.os.CancellationSignal;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsetsController;
@@ -508,6 +509,77 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void aiHttpPostAsync(final String cbId, final String urlStr, final String headersJson, final String bodyJson) {
             bgExecutor.execute(() -> dispatchAsyncResult(cbId, aiHttpPost(urlStr, headersJson, bodyJson)));
+        }
+
+        @JavascriptInterface
+        public void downloadAndInstallApkAsync(final String cbId, final String urlStr, final String ghToken) {
+            bgExecutor.execute(() -> dispatchAsyncResult(cbId, downloadAndInstallApkSync(urlStr, ghToken)));
+        }
+
+        private String downloadAndInstallApkSync(String urlStr, String ghToken) {
+            HttpURLConnection conn = null;
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (!getPackageManager().canRequestPackageInstalls()) {
+                        Intent permIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:" + getPackageName()));
+                        permIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(permIntent);
+                        return "{\"ok\":false,\"needsPermission\":true,\"error\":\"Allow 'Install unknown apps' for LedgerFlow in Settings, then tap Update again.\"}";
+                    }
+                }
+                if (urlStr == null || !urlStr.startsWith("https://")) {
+                    return "{\"ok\":false,\"error\":\"Invalid HTTPS APK URL.\"}";
+                }
+                URL currentUrl = new URL(urlStr);
+                String initialHost = currentUrl.getHost() == null ? "" : currentUrl.getHost().toLowerCase(Locale.US);
+                if (!initialHost.equals("github.com") && !initialHost.equals("raw.githubusercontent.com") && !initialHost.endsWith(".githubusercontent.com")) {
+                    return "{\"ok\":false,\"error\":\"Untrusted update host.\"}";
+                }
+
+                for (int hops = 0; hops < 6; hops++) {
+                    conn = (HttpURLConnection) currentUrl.openConnection();
+                    conn.setInstanceFollowRedirects(false);
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(30000);
+                    conn.setRequestProperty("User-Agent", "LedgerFlow-Android/1.0");
+                    String h = currentUrl.getHost() == null ? "" : currentUrl.getHost().toLowerCase(Locale.US);
+                    if (ghToken != null && !ghToken.trim().isEmpty() && (h.equals("github.com") || h.equals("api.github.com") || h.equals("raw.githubusercontent.com"))) {
+                        conn.setRequestProperty("Authorization", "Bearer " + ghToken.trim());
+                    }
+                    int code = conn.getResponseCode();
+                    if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                        String loc = conn.getHeaderField("Location");
+                        conn.disconnect();
+                        conn = null;
+                        if (loc == null || loc.isEmpty()) break;
+                        currentUrl = new URL(currentUrl, loc);
+                        continue;
+                    }
+                    if (code < 200 || code >= 300) {
+                        return "{\"ok\":false,\"error\":\"APK download failed (HTTP " + code + ")\"}";
+                    }
+                    File updDir = new File(getCacheDir(), "updates");
+                    if (!updDir.exists()) updDir.mkdirs();
+                    File apkFile = new File(updDir, "LedgerFlow-update.apk");
+                    try (InputStream is = conn.getInputStream(); FileOutputStream fos = new FileOutputStream(apkFile)) {
+                        byte[] buf = new byte[16384];
+                        int n;
+                        while ((n = is.read(buf)) > 0) fos.write(buf, 0, n);
+                    }
+                    Uri apkUri = Uri.parse("content://com.ledgerflow.app.apkprovider/LedgerFlow-update.apk");
+                    Intent installIntent = new Intent(Intent.ACTION_VIEW);
+                    installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                    installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(installIntent);
+                    return "{\"ok\":true}";
+                }
+                return "{\"ok\":false,\"error\":\"Too many redirects downloading APK.\"}";
+            } catch (Exception ex) {
+                return "{\"ok\":false,\"error\":" + JSONObject.quote(ex.getMessage()) + "}";
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
         }
 
         @JavascriptInterface
