@@ -715,6 +715,31 @@ input:focus, select:focus, textarea:focus {
   border-radius: 50%; background: var(--emerald); box-shadow: 0 0 0 2px var(--surface);
 }
 
+/* PDF / AI Reading Progress Dialog */
+.lf-progress-spinner {
+  width: 44px; height: 44px; margin: 0 auto;
+  border-radius: 50%;
+  border: 3.5px solid var(--border);
+  border-top-color: var(--primary);
+  border-right-color: var(--emerald);
+  animation: lfSpin 0.85s linear infinite;
+}
+.lf-progress-track {
+  width: 100%; height: 6px; border-radius: 999px;
+  background: var(--surface-2); overflow: hidden;
+  border: 1px solid var(--border);
+}
+.lf-progress-bar {
+  width: 42%; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--emerald));
+  animation: lfProgressSlide 1.35s ease-in-out infinite;
+}
+@keyframes lfSpin { to { transform: rotate(360deg); } }
+@keyframes lfProgressSlide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(260%); }
+}
+
 /* Clean Print / PDF Statement */
 @media print {
   .sidebar, .topbar, .filter-bar, .btn, .icon-btn, .toast-container { display: none !important; }

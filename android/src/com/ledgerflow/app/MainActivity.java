@@ -92,6 +92,7 @@ public class MainActivity extends Activity {
         ws.setBuiltInZoomControls(false);
         ws.setDisplayZoomControls(false);
         ws.setMediaPlaybackRequiresUserGesture(false);
+        ws.setDefaultTextEncodingName("UTF-8");
 
         webView.addJavascriptInterface(new AndroidBridge(), "LedgerFlowAndroid");
 
@@ -499,6 +500,11 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {
                 return "{\"online\":true}";
             }
+        }
+
+        @JavascriptInterface
+        public void parseStatementJsonAsync(final String cbId, final String requestJson) {
+            bgExecutor.execute(() -> dispatchAsyncResult(cbId, parseStatementJson(requestJson)));
         }
 
         @JavascriptInterface

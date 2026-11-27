@@ -41,7 +41,7 @@
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const API_TOKEN = URL_PARAMS.get("token") || "";
   const IS_PREVIEW_PARAM = URL_PARAMS.get("preview") === "1";
-  const APP_VERSION = "1.0.4";
+  const APP_VERSION = "1.0.5";
   const GITHUB_REPO = "dhyanbirprofessional-svg/LedgerFlow";
 
   let isDesktopHost = false;
@@ -171,7 +171,110 @@
     fn(payloadJson);
   };
 
-  function callAndroidAsync(methodName, args) {
+  function showPdfProgress(title = "Reading PDF Statement...", sub = "Extracting transactions locally. Large statements may take a few seconds...") {
+    const modal = document.getElementById("pdf-progress-modal");
+    if (!modal) return;
+    const tEl = document.getElementById("pdf-progress-title");
+    const sEl = document.getElementById("pdf-progress-sub");
+    if (tEl) tEl.textContent = title;
+    if (sEl) sEl.textContent = sub;
+    modal.classList.remove("hidden");
+  }
+
+  function updatePdfProgress(sub, title = null) {
+    const tEl = document.getElementById("pdf-progress-title");
+    const sEl = document.getElementById("pdf-progress-sub");
+    if (title !== null && tEl) tEl.textContent = title;
+    if (sub !== null && sEl) sEl.textContent = sub;
+  }
+
+  function hidePdfProgress() {
+    const modal = document.getElementById("pdf-progress-modal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  function isGeminiConnected() {
+    const cfg = state.settings?.aiConfig || {};
+    return cfg.provider === "gemini" && cfg.mode !== "local" && String(cfg.apiKey || "").trim().length >= 10;
+  }
+
+  function openQuickGeminiConnectModal(onConnected = null) {
+    const cfg = state.settings.aiConfig || {};
+    openSubModal("Connect Free Google Gemini Key", `
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div class="info-banner text-sm">
+          <strong>PDF Statement Verifier:</strong> Gemini is used <strong>only</strong> to analyze &amp; verify PDF bank statements before pushing entries into your ledger (not as a chatbot).
+        </div>
+        <div class="text-xs muted">
+          1. Click <strong>Get Free Gemini Key</strong> below to open Google AI Studio (100% free, no credit card).<br/>
+          2. Create an API key, copy it, and paste it below.
+        </div>
+        <div>
+          <a class="btn btn-secondary btn-sm" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get Free Gemini Key &nearr;</a>
+        </div>
+        <div class="field">
+          <label>Gemini API Key (stored locally in your vault)</label>
+          <div class="input-group">
+            <input id="quick-gemini-key-input" type="password" placeholder="AIza..." value="${esc(cfg.apiKey || "")}" autocomplete="off" />
+            <button type="button" class="btn btn-secondary btn-sm" id="quick-gemini-key-toggle">Show</button>
+          </div>
+        </div>
+        <div id="quick-gemini-status" class="text-xs muted"></div>
+        <div class="modal-footer" style="margin-top:4px;padding-top:10px;">
+          <button type="button" class="btn btn-ghost" data-close="sub-modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="quick-gemini-save-btn">Save &amp; Connect Gemini</button>
+        </div>
+      </div>
+    `);
+
+    const inp = document.getElementById("quick-gemini-key-input");
+    const tog = document.getElementById("quick-gemini-key-toggle");
+    const saveBtn = document.getElementById("quick-gemini-save-btn");
+    const statusEl = document.getElementById("quick-gemini-status");
+    if (tog && inp) {
+      tog.onclick = () => {
+        inp.type = inp.type === "password" ? "text" : "password";
+        tog.textContent = inp.type === "password" ? "Show" : "Hide";
+      };
+    }
+    if (inp) setTimeout(() => inp.focus(), 40);
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        const key = String(inp?.value || "").trim();
+        if (key.length < 10) {
+          if (statusEl) { statusEl.textContent = "Please paste a valid Gemini API key."; statusEl.style.color = "var(--rose)"; }
+          return;
+        }
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Verifying…";
+        if (statusEl) { statusEl.textContent = "Testing connection to Google Gemini…"; statusEl.style.color = "var(--muted)"; }
+        const nextCfg = Object.assign({}, state.settings.aiConfig || {}, {
+          provider: "gemini",
+          mode: (state.settings.aiConfig?.mode === "local" || !state.settings.aiConfig?.mode) ? "hybrid" : state.settings.aiConfig.mode,
+          apiKey: key
+        });
+        try {
+          const gRes = await callGeminiWithFallback({
+            contents: [{ role: "user", parts: [{ text: "Reply OK" }] }],
+            generationConfig: { temperature: 0, maxOutputTokens: 8 }
+          }, nextCfg);
+          state.settings.aiConfig = nextCfg;
+          await saveState();
+          closeModal("sub-modal");
+          toast(`✓ Gemini connected (${gRes.model}).`);
+          if (typeof onConnected === "function") onConnected();
+          else renderCurrentView();
+        } catch (err) {
+          if (statusEl) { statusEl.textContent = "Connection error: " + (err?.message || "Failed"); statusEl.style.color = "var(--rose)"; }
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save & Connect Gemini";
+        }
+      };
+    }
+  }
+
+  function callAndroidAsync(methodName, args, timeoutMs = 45000) {
     return new Promise((resolve, reject) => {
       const bridge = window.LedgerFlowAndroid;
       if (!bridge || typeof bridge[methodName] !== "function") {
@@ -183,7 +286,7 @@
           androidAsyncWaiters.delete(cbId);
           reject(new Error("Android request timed out."));
         }
-      }, 45000);
+      }, timeoutMs);
       androidAsyncWaiters.set(cbId, (jsonStr) => {
         clearTimeout(tid);
         resolve(jsonStr);
@@ -411,25 +514,24 @@
   }
 
   /* ---------- Persistence Layer (Desktop/Android Native Host + Preview Fallback) ---------- */
-  function callAndroidParser(bodyText) {
+  async function callAndroidParser(bodyText) {
+    const bridge = window.LedgerFlowAndroid;
+    if (!bridge) throw new Error("Android parser unavailable");
+    if (typeof bridge.parseStatementJsonAsync === "function") {
+      const raw = await callAndroidAsync("parseStatementJsonAsync", [String(bodyText || "")], 180000);
+      return JSON.parse(raw);
+    }
+    if (typeof bridge.parseStatementJson !== "function") {
+      throw new Error("Android parser unavailable");
+    }
     return new Promise((resolve, reject) => {
-      try {
-        if (!window.LedgerFlowAndroid || typeof window.LedgerFlowAndroid.parseStatementJson !== "function") {
-          reject(new Error("Android parser unavailable"));
-          return;
+      setTimeout(() => {
+        try {
+          resolve(JSON.parse(bridge.parseStatementJson(String(bodyText || ""))));
+        } catch (err) {
+          reject(err);
         }
-        // Defer one frame so UI renders toast/busy state cleanly before synchronous ZIP/XML parse
-        setTimeout(() => {
-          try {
-            const raw = window.LedgerFlowAndroid.parseStatementJson(String(bodyText || ""));
-            resolve(JSON.parse(raw));
-          } catch (err) {
-            reject(err);
-          }
-        }, 16);
-      } catch (err) {
-        reject(err);
-      }
+      }, 16);
     });
   }
 
@@ -3134,6 +3236,9 @@
           <div class="text-xs muted mt-1">Learns from your category edits offline (${Object.keys(state.settings.aiMemory || {}).length} learned payee(s)). Google Gemini is reserved strictly for analyzing &amp; checking PDF bank statements before pushing entries.</div>
         </div>
         <div class="flex-gap" style="flex-wrap:wrap;">
+          ${isGeminiConnected()
+            ? `<button class="btn btn-secondary btn-sm" id="ai-connect-gemini-btn">✓ Gemini PDF Active</button>`
+            : `<button class="btn btn-primary btn-sm" id="ai-connect-gemini-btn">✨ Connect Free Gemini Key</button>`}
           <button class="btn btn-secondary btn-sm" id="ai-open-importer-btn">📄 Analyze PDF Statement</button>
           <button class="btn btn-primary btn-sm" id="ai-clean-classify-btn">✨ Clean Payees &amp; Auto-Classify</button>
         </div>
@@ -3241,6 +3346,8 @@
       aiChatHistory = [];
       renderAiAssistantView(root);
     };
+    const connGemBtn = document.getElementById("ai-connect-gemini-btn");
+    if (connGemBtn) connGemBtn.onclick = () => openQuickGeminiConnectModal(() => renderAiAssistantView(root));
     const openImpAiBtn = document.getElementById("ai-open-importer-btn");
     if (openImpAiBtn) openImpAiBtn.onclick = () => openStatementModal();
     document.getElementById("ai-clean-classify-btn").onclick = async () => {
@@ -6038,6 +6145,8 @@
     }
 
     document.getElementById("csv-mapping-section").classList.remove("hidden");
+    const chkBtnInit = document.getElementById("csv-gemini-check-btn");
+    if (chkBtnInit) chkBtnInit.textContent = hasGeminiCheck ? "Check PDF with Gemini" : "✨ Connect Gemini Key";
     if (entries.length === 0) {
       const adv = document.getElementById("csv-advanced-details");
       if (adv) adv.open = true;
@@ -6062,9 +6171,10 @@
     if (aiCfg.provider !== "gemini" || aiCfg.mode === "local" || String(aiCfg.apiKey || "").trim().length < 10) {
       if (repEl) {
         repEl.className = "mb-3";
-        repEl.innerHTML = "<strong>Gemini PDF Check:</strong> Add your free Gemini API key in <strong>Settings &rarr; PDF Statement Analyzer</strong> to auto-check PDF entries before pushing.";
+        repEl.innerHTML = "<strong>Gemini PDF Check:</strong> Add your free Gemini API key to auto-check PDF entries before pushing.";
       }
-      return toast("Add your Gemini API key in Settings to run pre-import PDF verification.");
+      openQuickGeminiConnectModal(() => verifyStatementWithGeminiBeforeImport());
+      return;
     }
 
     const { entries } = buildStatementEntriesFromState();
@@ -6074,6 +6184,7 @@
       repEl.innerHTML = `⏳ <strong>Gemini PDF Check:</strong> Analyzing ${entries.length} extracted entry(ies) before pushing to your ledger…`;
     }
     if (chkBtn) { chkBtn.disabled = true; chkBtn.textContent = "Checking PDF…"; }
+    showPdfProgress("✨ Gemini AI is Reading PDF...", `Analyzing ${entries.length} extracted entry(ies) before pushing to your ledger…`);
 
     try {
       const catIds = (state.categories || []).map((c) => `${c.id} (${c.type})`).join(", ");
@@ -6154,7 +6265,8 @@
         repEl.innerHTML = `<strong>Gemini Check Note:</strong> ${esc(err?.message || "Could not verify right now")} — you can still inspect the parsed table below and tap <strong>Auto-Enter Entries</strong>.`;
       }
     } finally {
-      if (chkBtn) { chkBtn.disabled = false; chkBtn.textContent = "Check PDF with Gemini"; }
+      hidePdfProgress();
+      if (chkBtn) { chkBtn.disabled = false; chkBtn.textContent = isGeminiConnected() ? "Check PDF with Gemini" : "✨ Connect Gemini Key"; }
     }
   }
 
@@ -7154,21 +7266,25 @@
 
     if (isPdf) {
       try {
+        showPdfProgress("📄 Reading PDF Statement...", `Loading "${file.name}"...`);
         const dataUrl = await readAsDataUrl(file);
         pendingUploadFile = { file, dataUrl };
         if (isDesktopHost) {
           if (protChk && protChk.checked && !chosenPw) {
+            hidePdfProgress();
             pwBox.classList.remove("hidden");
             document.getElementById("stmt-pw-desc").textContent = "Enter the PDF password for \"" + file.name + "\", then tap Unlock & Enter or Unlock & Export CSV.";
             setTimeout(() => pwInput.focus(), 40);
             return;
           }
-          toast("📄 Reading PDF bank statement locally...");
+          const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+          updatePdfProgress(`Extracting transactions locally from "${file.name}" (${sizeMb} MB). Large statements (100-300+ pages) may take 15-45 seconds...`);
           const res = await apiFetch("/api/parse-statement", {
             method: "POST",
             body: JSON.stringify({ fileName: file.name, base64: dataUrl, password: chosenPw })
           });
           if (res && !res.ok && res.needsPassword) {
+            hidePdfProgress();
             if (protChk) protChk.checked = true;
             pwBox.classList.remove("hidden");
             document.getElementById("stmt-pw-desc").textContent = chosenPw
@@ -7179,6 +7295,7 @@
             return;
           }
           if (res && res.ok && Array.isArray(res.rows) && res.rows.length > 0) {
+            hidePdfProgress();
             pwBox.classList.add("hidden");
             const doExport = exportOnly || pendingExportOnly;
             pendingExportOnly = false;
@@ -7204,8 +7321,9 @@
           // If scanned PDF and external AI is configured, fall back to AI Vision/PDF OCR
           const aiCfg = state.settings.aiConfig || {};
           if (aiCfg.provider && aiCfg.provider !== "none" && aiCfg.mode !== "local") {
-            toast("🧠 Scanned PDF detected — falling back to Vision AI...");
+            updatePdfProgress("Scanned PDF detected — reading via Vision AI...", "🧠 AI is Reading Scanned PDF...");
             const ocrRes = await extractStatementViaOcrAi({ rawText: "", dataUrl, mimeType: "application/pdf", fileName: file.name });
+            hidePdfProgress();
             const meta = extractBankMeta(ocrRes.rows);
             meta.viaOcr = true;
             meta.fileName = file.name;
@@ -7217,7 +7335,7 @@
         }
 
         // Browser preview fallback (no native host): decompress PDF locally in JS
-        toast("📄 Reading PDF bank statement locally...");
+        updatePdfProgress(`Extracting text from "${file.name}" in browser...`);
         const buf = await file.arrayBuffer();
         const rawLatin = new TextDecoder("latin1").decode(new Uint8Array(buf));
         if (/\/Encrypt\s+(\d+\s+\d+\s+R|<<)/.test(rawLatin)) {
@@ -7226,6 +7344,7 @@
         const localText = await extractPdfReadableText(buf);
         const offlineRows = parseUnstructuredStatementText(localText);
         if (offlineRows.length > 1) {
+          hidePdfProgress();
           const meta = extractBankMeta(offlineRows);
           meta.fileName = file.name;
           meta.format = "pdf";
@@ -7234,7 +7353,9 @@
         }
         const aiCfg = state.settings.aiConfig || {};
         if (aiCfg.provider && aiCfg.provider !== "none" && aiCfg.mode !== "local") {
+          updatePdfProgress("Analyzing extracted text with AI...", "✨ AI is Reading PDF...");
           const ocrRes = await extractStatementViaOcrAi({ rawText: localText, dataUrl, mimeType: "application/pdf", fileName: file.name });
+          hidePdfProgress();
           const meta = extractBankMeta(ocrRes.rows);
           meta.viaOcr = true;
           meta.fileName = file.name;
@@ -7245,6 +7366,8 @@
         return toast("No selectable text found in this PDF. Export as Excel/CSV, paste text in 'Paste / OCR Text', or use the Windows/Android LedgerFlow app.");
       } catch (err) {
         toast("PDF import error: " + err.message);
+      } finally {
+        hidePdfProgress();
       }
       return;
     }

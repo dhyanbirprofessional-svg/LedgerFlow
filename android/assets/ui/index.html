@@ -582,6 +582,16 @@
     </div>
   </div>
 
+  <!-- PDF / AI Reading Progress Dialog -->
+  <div id="pdf-progress-modal" class="modal-backdrop hidden" style="z-index:1200;">
+    <div class="modal" style="max-width:420px;text-align:center;padding:28px 24px;">
+      <div class="lf-progress-spinner" aria-hidden="true"></div>
+      <h3 id="pdf-progress-title" style="margin:14px 0 6px;font-size:17px;">Reading PDF Statement...</h3>
+      <p id="pdf-progress-sub" class="muted text-sm" style="margin:0 0 16px;">Extracting transactions locally. Large statements may take a few seconds...</p>
+      <div class="lf-progress-track"><div class="lf-progress-bar"></div></div>
+    </div>
+  </div>
+
   <!-- Toast Stack -->
   <div id="toast-container" class="toast-container"></div>
 

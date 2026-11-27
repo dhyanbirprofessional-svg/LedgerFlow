@@ -1398,27 +1398,38 @@ public final class StatementParser {
             PdfCMap globalCMap = new PdfCMap();
             Map<Integer, PdfCMap> objCMaps = new HashMap<Integer, PdfCMap>();
 
+            Pattern imgSubPat = Pattern.compile("/Subtype\\s*/Image\\b");
+            Pattern objStmPat = Pattern.compile("/Type\\s*/ObjStm\\b");
             List<Integer> objIds = new ArrayList<Integer>(objs.keySet());
             for (int id : objIds) {
                 PdfIndirectObj o = objs.get(id);
                 if (o.rawStream != null) {
+                    if (o.dict != null && imgSubPat.matcher(o.dict).find()) {
+                        o.rawStream = null;
+                        continue;
+                    }
                     byte[] streamSrc = secCtx != null
                             ? decryptPdfObjectStream(o.rawStream, o.id, o.gen, o.dict, secCtx)
                             : o.rawStream;
                     o.decodedStream = decodePdfStream(streamSrc, o.dict);
+                    o.rawStream = null;
                     if (o.decodedStream != null && o.decodedStream.length > 0) {
-                        String sText = new String(o.decodedStream, StandardCharsets.ISO_8859_1);
-                        if (sText.contains("beginbfchar") || sText.contains("beginbfrange")) {
-                            PdfCMap cm = parsePdfCMap(sText);
-                            objCMaps.put(id, cm);
-                            mergePdfCMap(globalCMap, cm);
+                        if (o.decodedStream.length <= 512 * 1024) {
+                            String sText = new String(o.decodedStream, StandardCharsets.ISO_8859_1);
+                            if (sText.contains("beginbfchar") || sText.contains("beginbfrange")) {
+                                PdfCMap cm = parsePdfCMap(sText);
+                                objCMaps.put(id, cm);
+                                mergePdfCMap(globalCMap, cm);
+                            }
                         }
-                        if (o.dict != null && Pattern.compile("/Type\\s*/ObjStm\\b").matcher(o.dict).find()) {
+                        if (o.dict != null && objStmPat.matcher(o.dict).find()) {
                             extractPdfObjStm(o.decodedStream, o.dict, objs);
+                            o.decodedStream = null;
                         }
                     }
                 }
             }
+            pdfStr = null;
 
             List<PdfIndirectObj> pageObjs = new ArrayList<PdfIndirectObj>();
             List<Integer> pageOrderIds = resolvePdfPageOrder(objs);
@@ -1476,6 +1487,8 @@ public final class StatementParser {
                 }
             }
 
+            objs.clear();
+            objCMaps.clear();
             if (allFrags.isEmpty()) {
                 res.format = "pdf-scanned";
                 res.error = "No selectable text found in this PDF (it looks like a scanned image PDF). Use 'Paste / OCR Text' or configure Vision AI in Settings.";

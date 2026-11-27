@@ -1,7 +1,7 @@
 {
-    "version":  "1.0.4",
+    "version":  "1.0.5",
     "repo":  "dhyanbirprofessional-svg/LedgerFlow",
-    "notes":  "Fix missing final-page skewed PDF rows (e.g. 27/11/2026 closing balance reconciliation), filter orphaned Balance header fragments, strip inline - - placeholders, and pause on Statement Summary mismatch.",
+    "notes":  "Add live PDF \u0026 Gemini reading progress dialog, add Connect Free Gemini Key button across PC \u0026 mobile, fix Android WebView UTF-8 encoding, and optimize 300+ page large PDF parsing (120s timeout, 128MB limit, image-stream skip, async Android bridge).",
     "windowsAsset":  "LedgerFlow-Setup.exe",
     "androidAsset":  "LedgerFlow.apk",
     "releaseUrl":  "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"

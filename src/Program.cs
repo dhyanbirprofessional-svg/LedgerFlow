@@ -249,8 +249,8 @@ namespace LedgerFlowHost {
 
         static void HandleClient(TcpClient client) {
             using (client) {
-                client.ReceiveTimeout = 10000;
-                client.SendTimeout = 10000;
+                client.ReceiveTimeout = 120000;
+                client.SendTimeout = 120000;
                 try {
                     using (var ns = client.GetStream()) {
                         var headerBuf = new MemoryStream();
@@ -289,7 +289,7 @@ namespace LedgerFlowHost {
                         if (headers.ContainsKey("Content-Length")) {
                             int.TryParse(headers["Content-Length"], out contentLength);
                         }
-                        if (contentLength < 0 || contentLength > 32 * 1024 * 1024) {
+                        if (contentLength < 0 || contentLength > 128 * 1024 * 1024) {
                             SendResponse(ns, 413, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"error\":\"Payload too large\"}"));
                             return;
                         }

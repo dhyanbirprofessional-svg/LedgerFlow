@@ -21,7 +21,7 @@ namespace LedgerFlowHost {
         }
 
         public static string HandleParseRequest(string jsonBody) {
-            var serializer = new JavaScriptSerializer { MaxJsonLength = 64 * 1024 * 1024 };
+            var serializer = new JavaScriptSerializer { MaxJsonLength = 128 * 1024 * 1024 };
             Dictionary<string, object> req;
             try {
                 req = serializer.Deserialize<Dictionary<string, object>>(jsonBody);
@@ -1137,26 +1137,36 @@ namespace LedgerFlowHost {
                 var globalCMap = new PdfCMap();
                 var objCMaps = new Dictionary<int, PdfCMap>();
 
-                // Decrypt (if encrypted) & decompress all streams & extract ToUnicode CMaps + ObjStm objects
+                // Decrypt (if encrypted) & decompress text/font/objstm streams (skip images to save RAM on 300+ page PDFs)
                 var objIds = new List<int>(objs.Keys);
                 foreach (int id in objIds) {
                     PdfIndirectObj o = objs[id];
                     if (o.RawStream != null) {
+                        if (Regex.IsMatch(o.Dict ?? "", @"/Subtype\s*/Image\b")) {
+                            o.RawStream = null;
+                            continue;
+                        }
                         byte[] streamSrc = secCtx != null ? DecryptPdfObjectStream(o.RawStream, o.Id, o.Gen, o.Dict, secCtx) : o.RawStream;
                         o.DecodedStream = DecodePdfStream(streamSrc, o.Dict);
+                        o.RawStream = null;
                         if (o.DecodedStream != null && o.DecodedStream.Length > 0) {
-                            string sText = latin1.GetString(o.DecodedStream);
-                            if (sText.Contains("beginbfchar") || sText.Contains("beginbfrange")) {
-                                PdfCMap cm = ParsePdfCMap(sText);
-                                objCMaps[id] = cm;
-                                MergeCMap(globalCMap, cm);
+                            bool isObjStm = Regex.IsMatch(o.Dict ?? "", @"/Type\s*/ObjStm\b");
+                            if (o.DecodedStream.Length <= 512 * 1024) {
+                                string sText = latin1.GetString(o.DecodedStream);
+                                if (sText.Contains("beginbfchar") || sText.Contains("beginbfrange")) {
+                                    PdfCMap cm = ParsePdfCMap(sText);
+                                    objCMaps[id] = cm;
+                                    MergeCMap(globalCMap, cm);
+                                }
                             }
-                            if (Regex.IsMatch(o.Dict ?? "", @"/Type\s*/ObjStm\b")) {
+                            if (isObjStm) {
                                 ExtractPdfObjStm(o.DecodedStream, o.Dict, objs);
+                                o.DecodedStream = null;
                             }
                         }
                     }
                 }
+                pdfStr = null;
 
                 // Collect Page objects and map their content streams & fonts
                 var pageObjs = new List<PdfIndirectObj>();
@@ -1215,6 +1225,8 @@ namespace LedgerFlowHost {
                     }
                 }
 
+                objs.Clear();
+                objCMaps.Clear();
                 if (allFrags.Count == 0) {
                     return new ParseResult {
                         ok = false,
