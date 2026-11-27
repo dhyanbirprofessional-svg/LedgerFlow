@@ -1,0 +1,8 @@
+{
+  "version": "1.0.1",
+  "repo": "dhyanbirprofessional-svg/LedgerFlow",
+  "notes": "Fixed SBI PDF parsing, built-in AI + Gemini 3.8 Flash, mandatory online gate, and automatic GitHub update checks.",
+  "windowsAsset": "LedgerFlow-Setup.exe",
+  "androidAsset": "LedgerFlow.apk",
+  "releaseUrl": "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"
+}

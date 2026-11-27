@@ -481,6 +481,91 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String checkUpdateJson(String ghToken) {
+            String repo = "dhyanbirprofessional-svg/LedgerFlow";
+            String[] urls = new String[] {
+                "https://api.github.com/repos/" + repo + "/releases/latest",
+                "https://raw.githubusercontent.com/" + repo + "/main/version.json"
+            };
+            int lastCode = 0;
+            for (int u = 0; u < urls.length; u++) {
+                HttpURLConnection conn = null;
+                try {
+                    conn = (HttpURLConnection) new URL(urls[u]).openConnection();
+                    conn.setRequestMethod("GET");
+                    conn.setConnectTimeout(7000);
+                    conn.setReadTimeout(7000);
+                    conn.setRequestProperty("User-Agent", "LedgerFlow-Android/1.0");
+                    conn.setRequestProperty("Accept", "application/vnd.github+json");
+                    if (ghToken != null && !ghToken.trim().isEmpty()) {
+                        conn.setRequestProperty("Authorization", "Bearer " + ghToken.trim());
+                    }
+                    int code = conn.getResponseCode();
+                    lastCode = code;
+                    if (code >= 200 && code < 300) {
+                        StringBuilder sb = new StringBuilder();
+                        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = br.readLine()) != null) sb.append(line).append('\n');
+                        }
+                        JSONObject raw = new JSONObject(sb.toString());
+                        JSONObject out = new JSONObject();
+                        if (u == 0) {
+                            String tag = raw.optString("tag_name", "").replaceFirst("^[vV]", "");
+                            out.put("ok", !tag.isEmpty());
+                            out.put("version", tag);
+                            out.put("notes", raw.optString("body", ""));
+                            out.put("releaseUrl", raw.optString("html_url", "https://github.com/" + repo + "/releases/latest"));
+                            String winUrl = "", apkUrl = "";
+                            org.json.JSONArray assets = raw.optJSONArray("assets");
+                            if (assets != null) {
+                                for (int i = 0; i < assets.length(); i++) {
+                                    JSONObject a = assets.optJSONObject(i);
+                                    if (a == null) continue;
+                                    String nm = a.optString("name", "");
+                                    String dl = a.optString("browser_download_url", "");
+                                    if (nm.toLowerCase(Locale.US).endsWith(".exe")) winUrl = dl;
+                                    else if (nm.toLowerCase(Locale.US).endsWith(".apk")) apkUrl = dl;
+                                }
+                            }
+                            out.put("windowsUrl", winUrl);
+                            out.put("androidUrl", apkUrl);
+                            if (!tag.isEmpty()) return out.toString();
+                        } else {
+                            String ver = raw.optString("version", "").replaceFirst("^[vV]", "");
+                            out.put("ok", !ver.isEmpty());
+                            out.put("version", ver);
+                            out.put("notes", raw.optString("notes", ""));
+                            out.put("windowsUrl", "https://raw.githubusercontent.com/" + repo + "/main/LedgerFlow-Setup.exe");
+                            out.put("androidUrl", "https://raw.githubusercontent.com/" + repo + "/main/LedgerFlow.apk");
+                            out.put("releaseUrl", raw.optString("releaseUrl", "https://github.com/" + repo + "/releases/latest"));
+                            if (!ver.isEmpty()) return out.toString();
+                        }
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+            }
+            return "{\"ok\":false,\"status\":" + lastCode + ",\"error\":" + JSONObject.quote(lastCode == 404 ? "GitHub repo is Private or has no release yet." : ("GitHub update check returned HTTP " + lastCode)) + "}";
+        }
+
+        @JavascriptInterface
+        public String openExternalUrl(String urlStr) {
+            try {
+                if (urlStr == null || (!urlStr.startsWith("https://") && !urlStr.startsWith("http://"))) {
+                    return "{\"ok\":false,\"error\":\"Invalid URL\"}";
+                }
+                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(urlStr));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                return "{\"ok\":true}";
+            } catch (Exception ex) {
+                return "{\"ok\":false,\"error\":" + JSONObject.quote(ex.getMessage()) + "}";
+            }
+        }
+
+        @JavascriptInterface
         public String aiHttpPost(String urlStr, String headersJson, String bodyJson) {
             HttpURLConnection conn = null;
             try {

@@ -14,7 +14,7 @@ using Microsoft.Win32;
 namespace LedgerFlowSetup {
     static class Program {
         private const string AppName = "LedgerFlow";
-        private const string AppVersion = "1.0.0";
+        private const string AppVersion = "1.0.1";
         private const string Publisher = "LedgerFlow Software";
         private const string UninstallRegPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\LedgerFlow";
 

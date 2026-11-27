@@ -438,6 +438,22 @@ namespace LedgerFlowHost {
                 return;
             }
 
+            if (path == "/api/check-update" && method == "GET") {
+                ClientEverConnected = true;
+                LastPingUtc = DateTime.UtcNow;
+                string ghToken = headers.ContainsKey("X-GitHub-Token") ? headers["X-GitHub-Token"] : (GetQueryParam(query, "token") ?? "");
+                SendJson(ns, 200, CheckGitHubUpdate(ghToken));
+                return;
+            }
+
+            if (path == "/api/install-update" && method == "POST") {
+                ClientEverConnected = true;
+                LastPingUtc = DateTime.UtcNow;
+                string body = Encoding.UTF8.GetString(bodyBytes).Trim();
+                SendJson(ns, 200, DownloadAndRunWindowsUpdate(body));
+                return;
+            }
+
             SendJson(ns, 404, "{\"error\":\"Not found\"}");
         }
 
@@ -501,6 +517,125 @@ namespace LedgerFlowHost {
             ns.Write(hdrBytes, 0, hdrBytes.Length);
             if (body.Length > 0) ns.Write(body, 0, body.Length);
             ns.Flush();
+        }
+
+        private const string GitHubRepo = "dhyanbirprofessional-svg/LedgerFlow";
+
+        static string FetchGitHubText(string url, string ghToken, out int statusCode) {
+            statusCode = 0;
+            ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls;
+            var req = (HttpWebRequest)WebRequest.Create(url);
+            req.Method = "GET";
+            req.Timeout = 7000;
+            req.ReadWriteTimeout = 7000;
+            req.UserAgent = "LedgerFlow-Updater/1.0";
+            req.Accept = "application/vnd.github+json";
+            if (!string.IsNullOrEmpty(ghToken)) {
+                req.Headers["Authorization"] = "Bearer " + ghToken.Trim();
+            }
+            try {
+                using (var resp = (HttpWebResponse)req.GetResponse())
+                using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8)) {
+                    statusCode = (int)resp.StatusCode;
+                    return sr.ReadToEnd();
+                }
+            } catch (WebException wex) {
+                var errResp = wex.Response as HttpWebResponse;
+                if (errResp != null) {
+                    statusCode = (int)errResp.StatusCode;
+                    errResp.Close();
+                }
+                return null;
+            }
+        }
+
+        static string CheckGitHubUpdate(string ghToken) {
+            var ser = new JavaScriptSerializer();
+            try {
+                int code = 0;
+                string relJson = FetchGitHubText("https://api.github.com/repos/" + GitHubRepo + "/releases/latest", ghToken, out code);
+                if (!string.IsNullOrEmpty(relJson) && code >= 200 && code < 300) {
+                    var rel = ser.Deserialize<Dictionary<string, object>>(relJson);
+                    string tag = rel.ContainsKey("tag_name") && rel["tag_name"] != null ? rel["tag_name"].ToString().TrimStart('v', 'V') : "";
+                    string notes = rel.ContainsKey("body") && rel["body"] != null ? rel["body"].ToString() : "";
+                    string htmlUrl = rel.ContainsKey("html_url") && rel["html_url"] != null ? rel["html_url"].ToString() : ("https://github.com/" + GitHubRepo + "/releases/latest");
+                    string winUrl = "", apkUrl = "";
+                    if (rel.ContainsKey("assets") && rel["assets"] is System.Collections.ArrayList) {
+                        foreach (object item in (System.Collections.ArrayList)rel["assets"]) {
+                            var a = item as Dictionary<string, object>;
+                            if (a == null) continue;
+                            string nm = a.ContainsKey("name") && a["name"] != null ? a["name"].ToString() : "";
+                            string dl = a.ContainsKey("browser_download_url") && a["browser_download_url"] != null ? a["browser_download_url"].ToString() : "";
+                            if (nm.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) winUrl = dl;
+                            else if (nm.EndsWith(".apk", StringComparison.OrdinalIgnoreCase)) apkUrl = dl;
+                        }
+                    }
+                    if (!string.IsNullOrEmpty(tag)) {
+                        return ser.Serialize(new Dictionary<string, object> {
+                            { "ok", true }, { "version", tag }, { "notes", notes },
+                            { "windowsUrl", winUrl }, { "androidUrl", apkUrl }, { "releaseUrl", htmlUrl }
+                        });
+                    }
+                }
+
+                int rawCode = 0;
+                string verJson = FetchGitHubText("https://raw.githubusercontent.com/" + GitHubRepo + "/main/version.json", ghToken, out rawCode);
+                if (!string.IsNullOrEmpty(verJson) && rawCode >= 200 && rawCode < 300) {
+                    var v = ser.Deserialize<Dictionary<string, object>>(verJson);
+                    string ver = v.ContainsKey("version") && v["version"] != null ? v["version"].ToString().TrimStart('v', 'V') : "";
+                    string notes = v.ContainsKey("notes") && v["notes"] != null ? v["notes"].ToString() : "";
+                    string relUrl = v.ContainsKey("releaseUrl") && v["releaseUrl"] != null ? v["releaseUrl"].ToString() : ("https://github.com/" + GitHubRepo + "/releases/latest");
+                    return ser.Serialize(new Dictionary<string, object> {
+                        { "ok", !string.IsNullOrEmpty(ver) },
+                        { "version", ver },
+                        { "notes", notes },
+                        { "windowsUrl", "https://raw.githubusercontent.com/" + GitHubRepo + "/main/LedgerFlow-Setup.exe" },
+                        { "androidUrl", "https://raw.githubusercontent.com/" + GitHubRepo + "/main/LedgerFlow.apk" },
+                        { "releaseUrl", relUrl }
+                    });
+                }
+
+                return ser.Serialize(new Dictionary<string, object> {
+                    { "ok", false },
+                    { "status", code != 0 ? code : rawCode },
+                    { "error", (code == 404 || rawCode == 404) ? "GitHub repo is Private or has no release yet." : ("GitHub update check returned HTTP " + (code != 0 ? code : rawCode)) }
+                });
+            } catch (Exception ex) {
+                return ser.Serialize(new Dictionary<string, object> { { "ok", false }, { "error", ex.Message } });
+            }
+        }
+
+        static string DownloadAndRunWindowsUpdate(string jsonBody) {
+            var ser = new JavaScriptSerializer();
+            try {
+                var req = ser.Deserialize<Dictionary<string, object>>(jsonBody);
+                string url = req != null && req.ContainsKey("url") && req["url"] != null ? req["url"].ToString().Trim() : "";
+                string ghToken = req != null && req.ContainsKey("token") && req["token"] != null ? req["token"].ToString().Trim() : "";
+                Uri uri;
+                if (!Uri.TryCreate(url, UriKind.Absolute, out uri) || uri.Scheme != Uri.UriSchemeHttps) {
+                    return ser.Serialize(new Dictionary<string, object> { { "ok", false }, { "error", "Invalid HTTPS update URL." } });
+                }
+                string host = uri.Host.ToLowerInvariant();
+                if (host != "github.com" && host != "raw.githubusercontent.com" && !host.EndsWith(".githubusercontent.com")) {
+                    return ser.Serialize(new Dictionary<string, object> { { "ok", false }, { "error", "Untrusted update host." } });
+                }
+
+                ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls;
+                string tmpExe = Path.Combine(Path.GetTempPath(), "LedgerFlow-Setup-Update.exe");
+                var wc = new WebClient();
+                wc.Headers.Add("User-Agent", "LedgerFlow-Updater/1.0");
+                if (!string.IsNullOrEmpty(ghToken)) wc.Headers.Add("Authorization", "Bearer " + ghToken);
+                wc.DownloadFile(uri, tmpExe);
+
+                Process.Start(new ProcessStartInfo { FileName = tmpExe, UseShellExecute = true });
+                ThreadPool.QueueUserWorkItem(_ => {
+                    Thread.Sleep(700);
+                    QuitApp();
+                });
+                return ser.Serialize(new Dictionary<string, object> { { "ok", true } });
+            } catch (Exception ex) {
+                return ser.Serialize(new Dictionary<string, object> { { "ok", false }, { "error", ex.Message } });
+            }
         }
 
         static bool CheckInternetReachable() {

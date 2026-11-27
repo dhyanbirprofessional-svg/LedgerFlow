@@ -41,9 +41,13 @@
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const API_TOKEN = URL_PARAMS.get("token") || "";
   const IS_PREVIEW_PARAM = URL_PARAMS.get("preview") === "1";
+  const APP_VERSION = "1.0.1";
+  const GITHUB_REPO = "dhyanbirprofessional-svg/LedgerFlow";
 
   let isDesktopHost = false;
   let isAndroidHost = Boolean(window.LedgerFlowAndroid) || window.location.hostname === "ledgerflow.local";
+  let latestUpdateInfo = null;
+  let updateBannerDismissed = false;
   let currentView = "overview";
   let currentPeriod = "this_month";
   let customPeriodStart = "";
@@ -3499,11 +3503,71 @@
         <div id="settings-import-logs-list" style="display:flex;flex-direction:column;gap:8px;">
           ${renderImportLogsListHtml()}
         </div>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">🔄 App Updates &amp; GitHub Link</h3>
+            <p class="card-subtitle">Installed version <strong>v${APP_VERSION}</strong> • Linked repo <code>${GITHUB_REPO}</code></p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" id="check-update-btn">Check for Updates</button>
+            <button type="button" class="btn btn-primary btn-sm ${latestUpdateInfo && latestUpdateInfo.hasUpdate ? "" : "hidden"}" id="install-update-btn">Update to v${escapeHtml(latestUpdateInfo?.version || "")}</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>GitHub Access Token (optional — only needed while repo is Private)</label>
+            <input type="password" id="set-gh-token" value="${escapeHtml(state.settings.githubToken || "")}" placeholder="ghp_... (leave blank if GitHub repo is Public)" autocomplete="off">
+          </div>
+          <div style="display:flex;align-items:flex-end;">
+            <button type="button" class="btn btn-secondary btn-sm" id="save-gh-token-btn">Save Token</button>
+          </div>
+        </div>
+        <div id="update-status-msg" class="text-muted text-sm" style="margin-top:8px;">
+          ${latestUpdateInfo && latestUpdateInfo.hasUpdate
+            ? `New version v${escapeHtml(latestUpdateInfo.version)} is available on GitHub.`
+            : "Checks GitHub Releases &amp; version.json automatically on launch."}
+        </div>
       </div>`;
 
     bindImportLogActions(document.getElementById("settings-import-logs-list"), () => renderSettingsView(root));
     const openImpBtn = document.getElementById("set-open-importer-btn");
     if (openImpBtn) openImpBtn.onclick = () => openStatementModal();
+
+    const ghSaveBtn = document.getElementById("save-gh-token-btn");
+    if (ghSaveBtn) {
+      ghSaveBtn.onclick = async () => {
+        state.settings.githubToken = String(document.getElementById("set-gh-token")?.value || "").trim();
+        await saveState();
+        toast("GitHub token saved.");
+      };
+    }
+    const chkUpdBtn = document.getElementById("check-update-btn");
+    if (chkUpdBtn) {
+      chkUpdBtn.onclick = async () => {
+        const msgEl = document.getElementById("update-status-msg");
+        if (msgEl) msgEl.textContent = "Checking GitHub for updates…";
+        chkUpdBtn.disabled = true;
+        const res = await checkForAppUpdates(false);
+        chkUpdBtn.disabled = false;
+        if (msgEl) {
+          if (res.error) msgEl.textContent = res.error;
+          else if (res.hasUpdate) msgEl.textContent = `Update available: v${res.version} (installed v${APP_VERSION}).`;
+          else msgEl.textContent = `You are up to date (v${APP_VERSION}).`;
+        }
+        const instBtn = document.getElementById("install-update-btn");
+        if (instBtn) {
+          instBtn.classList.toggle("hidden", !(res && res.hasUpdate));
+          if (res && res.hasUpdate) instBtn.textContent = `Update to v${res.version}`;
+        }
+      };
+    }
+    const instUpdBtn = document.getElementById("install-update-btn");
+    if (instUpdBtn) {
+      instUpdBtn.onclick = () => triggerAppUpdateInstall();
+    }
 
     document.getElementById("set-currency").onchange = (e) => {
       state.settings.currency = e.target.value;
@@ -5459,6 +5523,133 @@
       netPollTimer = null;
     }
     return ok;
+  }
+
+  /* ---------- GitHub Release Update Checker (Desktop + Android) ---------- */
+  function compareSemver(a, b) {
+    const pa = String(a || "0").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+    const pb = String(b || "0").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+    const len = Math.max(pa.length, pb.length, 3);
+    for (let i = 0; i < len; i++) {
+      const va = pa[i] || 0;
+      const vb = pb[i] || 0;
+      if (va > vb) return 1;
+      if (va < vb) return -1;
+    }
+    return 0;
+  }
+
+  function renderAppUpdateBanner() {
+    const banner = document.getElementById("app-update-banner");
+    if (!banner) return;
+    if (!latestUpdateInfo || !latestUpdateInfo.hasUpdate || updateBannerDismissed) {
+      banner.classList.add("hidden");
+      return;
+    }
+    const titleEl = document.getElementById("app-update-title");
+    const notesEl = document.getElementById("app-update-notes");
+    const btnEl = document.getElementById("app-update-install-btn");
+    if (titleEl) titleEl.textContent = `Update Available: LedgerFlow v${latestUpdateInfo.version}`;
+    if (notesEl) notesEl.textContent = latestUpdateInfo.notes ? String(latestUpdateInfo.notes).slice(0, 140) : `Installed v${APP_VERSION} → GitHub v${latestUpdateInfo.version}`;
+    if (btnEl) btnEl.textContent = isAndroidHost ? "Download APK Update" : "Update & Restart";
+    banner.classList.remove("hidden");
+  }
+
+  async function checkForAppUpdates(silent = true) {
+    const ghToken = String(state?.settings?.githubToken || "").trim();
+    try {
+      let info = null;
+      if (window.LedgerFlowAndroid && typeof window.LedgerFlowAndroid.checkUpdateJson === "function") {
+        info = JSON.parse(window.LedgerFlowAndroid.checkUpdateJson(ghToken));
+      } else if (isDesktopHost) {
+        const hdrs = { "X-LedgerFlow-Token": API_TOKEN };
+        if (ghToken) hdrs["X-GitHub-Token"] = ghToken;
+        const r = await fetch("/api/check-update", { headers: hdrs, cache: "no-store" });
+        info = await r.json();
+      } else {
+        const hdrs = { Accept: "application/vnd.github+json" };
+        if (ghToken) hdrs.Authorization = "Bearer " + ghToken;
+        const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, { headers: hdrs, cache: "no-store" });
+        if (r.ok) {
+          const d = await r.json();
+          const assets = Array.isArray(d.assets) ? d.assets : [];
+          const win = assets.find((x) => /\.exe$/i.test(x.name || ""));
+          const apk = assets.find((x) => /\.apk$/i.test(x.name || ""));
+          info = {
+            ok: true,
+            version: String(d.tag_name || "").replace(/^v/i, ""),
+            notes: d.body || "",
+            windowsUrl: win ? win.browser_download_url : "",
+            androidUrl: apk ? apk.browser_download_url : "",
+            releaseUrl: d.html_url || `https://github.com/${GITHUB_REPO}/releases`
+          };
+        } else {
+          info = { ok: false, status: r.status, error: r.status === 404 ? "No public release found (repo may be private or no release published yet)." : `GitHub HTTP ${r.status}` };
+        }
+      }
+      if (!info || !info.ok) {
+        if (!silent && info?.error) toast(info.error, true);
+        return { ok: false, hasUpdate: false, error: info?.error || "Could not check GitHub updates." };
+      }
+      const remoteVer = String(info.version || "").replace(/^v/i, "").trim();
+      const hasUpdate = remoteVer && compareSemver(remoteVer, APP_VERSION) > 0;
+      latestUpdateInfo = {
+        ok: true,
+        hasUpdate: Boolean(hasUpdate),
+        version: remoteVer || APP_VERSION,
+        notes: info.notes || "",
+        windowsUrl: info.windowsUrl || "",
+        androidUrl: info.androidUrl || "",
+        releaseUrl: info.releaseUrl || `https://github.com/${GITHUB_REPO}/releases`
+      };
+      if (hasUpdate) updateBannerDismissed = false;
+      renderAppUpdateBanner();
+      if (!silent) {
+        toast(hasUpdate ? `Update v${remoteVer} is available on GitHub!` : `LedgerFlow v${APP_VERSION} is up to date.`);
+      }
+      return latestUpdateInfo;
+    } catch (err) {
+      if (!silent) toast("Update check failed: " + (err?.message || err), true);
+      return { ok: false, hasUpdate: false, error: err?.message || String(err) };
+    }
+  }
+
+  async function triggerAppUpdateInstall() {
+    if (!latestUpdateInfo || !latestUpdateInfo.hasUpdate) {
+      await checkForAppUpdates(false);
+      return;
+    }
+    const ghToken = String(state?.settings?.githubToken || "").trim();
+    const targetUrl = isAndroidHost
+      ? (latestUpdateInfo.androidUrl || latestUpdateInfo.releaseUrl)
+      : (latestUpdateInfo.windowsUrl || latestUpdateInfo.releaseUrl);
+    if (!targetUrl) {
+      toast("No release package URL found. Opening GitHub Releases…", true);
+      return;
+    }
+    if (isAndroidHost && window.LedgerFlowAndroid && typeof window.LedgerFlowAndroid.openExternalUrl === "function") {
+      window.LedgerFlowAndroid.openExternalUrl(targetUrl);
+      toast("Opening GitHub APK download in browser…");
+      return;
+    }
+    if (isDesktopHost) {
+      if (!/\.exe(\?|$)/i.test(targetUrl)) {
+        window.open(targetUrl, "_blank");
+        return;
+      }
+      toast("Downloading update installer… LedgerFlow will restart automatically.");
+      try {
+        const res = await apiFetch("/api/install-update", {
+          method: "POST",
+          body: JSON.stringify({ url: targetUrl, token: ghToken })
+        });
+        if (!res || !res.ok) toast(res?.error || "Update download failed.", true);
+      } catch (e) {
+        toast("Update download failed: " + (e?.message || e), true);
+      }
+      return;
+    }
+    window.open(targetUrl, "_blank");
   }
 
   async function runHybridAIClassification(txList, opts = {}) {
@@ -7673,6 +7864,12 @@
     window.addEventListener("online", () => { verifyMandatoryOnlineGate(); });
     verifyMandatoryOnlineGate();
     setInterval(() => { verifyMandatoryOnlineGate(); }, 25000);
+
+    const updInstallBtn = document.getElementById("app-update-install-btn");
+    if (updInstallBtn) updInstallBtn.onclick = () => triggerAppUpdateInstall();
+    const updDismissBtn = document.getElementById("app-update-dismiss-btn");
+    if (updDismissBtn) updDismissBtn.onclick = () => { updateBannerDismissed = true; renderAppUpdateBanner(); };
+    setTimeout(() => { checkForAppUpdates(true); }, 2500);
 
     const needsBio = !!state.settings.biometricLock;
     const needsPin = !!state.settings.pinHash;

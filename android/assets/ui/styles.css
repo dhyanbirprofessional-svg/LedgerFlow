@@ -699,6 +699,14 @@ input:focus, select:focus, textarea:focus {
 }
 .ai-prompt-chip:hover { border-color: var(--primary); color: var(--primary); }
 
+.update-banner {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 20px; background: var(--primary-soft); border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.update-banner.hidden { display: none; }
+.update-banner-text { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+
 /* Clean Print / PDF Statement */
 @media print {
   .sidebar, .topbar, .filter-bar, .btn, .icon-btn, .toast-container { display: none !important; }
