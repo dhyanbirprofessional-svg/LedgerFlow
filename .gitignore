@@ -1,0 +1,15 @@
+# Personal bank statements & backups (NEVER commit)
+CORRECTION/
+*.pdf
+ledgerflow-backup-*.json
+
+# Build intermediates & signing keys
+build/
+*.idsig
+android/ledgerflow.keystore
+*.class
+*.dex
+
+# OS / IDE clutter
+.DS_Store
+Thumbs.db

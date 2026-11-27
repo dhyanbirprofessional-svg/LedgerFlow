@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#4f46e5" id="meta-theme-color" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>LedgerFlow — Smart Personal Finance & Expense Tracker</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2310b981'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M19 42L28 31L35 37L46 22' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='46' cy='22' r='4' fill='white'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="mobile.css" />
+</head>
+<body>
+  <!-- Mobile-Only Ambient Luminous Aurora Backdrop -->
+  <div id="mobile-aurora-bg" aria-hidden="true">
+    <div class="aurora-orb orb-1"></div>
+    <div class="aurora-orb orb-2"></div>
+    <div class="aurora-orb orb-3"></div>
+  </div>
+
+  <!-- Mobile-Only Laminar Opening Animation Splash -->
+  <div id="mobile-splash-overlay" class="hidden" aria-hidden="true">
+    <div class="splash-stage">
+      <div class="splash-logo-shell">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 17L10 10L15 14L20 7"/>
+          <circle cx="20" cy="7" r="1.5" fill="currentColor"/>
+        </svg>
+      </div>
+      <div class="splash-title">LedgerFlow</div>
+      <div class="splash-sub">Living Flow &bull; Personal Bank &amp; Party Ledgers</div>
+    </div>
+  </div>
+
+  <!-- Security Lock Overlay -->
+  <div id="pin-lock-overlay" class="pin-overlay hidden" aria-hidden="true">
+    <div class="pin-card">
+      <div class="brand-mark lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17L10 10L15 14L20 7"/><circle cx="20" cy="7" r="1.5" fill="currentColor"/></svg>
+      </div>
+      <h2>LedgerFlow Locked</h2>
+      <p class="muted" id="pin-lock-subtitle">Verify your identity to unlock your local vault.</p>
+      <button id="biometric-unlock-btn" type="button" class="btn btn-primary w-full hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 0 0 8 11a4 4 0 1 1 8 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0 0 15.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 0 0 8 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/></svg>
+        <span>Unlock with Biometrics</span>
+      </button>
+      <div id="pin-password-group" style="display:flex;flex-direction:column;gap:12px;">
+        <div class="pin-dots" id="pin-dots"></div>
+        <input id="pin-unlock-input" type="password" maxlength="32" placeholder="Enter password" autocomplete="off" />
+        <button id="pin-unlock-btn" class="btn btn-primary w-full">Unlock Vault</button>
+      </div>
+      <div id="pin-error" class="form-error hidden">Verification failed. Try again.</div>
+    </div>
+  </div>
+
+  <!-- Mandatory Internet Connection Gate -->
+  <div id="net-lock-overlay" class="pin-overlay hidden" style="z-index:1100;" aria-hidden="true">
+    <div class="pin-card">
+      <div class="brand-mark lg" style="background:linear-gradient(135deg,var(--amber),var(--rose));">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+      </div>
+      <h2>Internet Connection Required</h2>
+      <p class="muted" id="net-lock-subtitle">LedgerFlow requires an active internet connection to intelligently read PDFs and process bank entries accurately.</p>
+      <button id="net-retry-btn" type="button" class="btn btn-primary w-full">Retry Connection</button>
+      <div id="net-lock-status" class="text-xs muted mt-2">Checking network connectivity…</div>
+    </div>
+  </div>
+
+  <div class="app-shell" id="app-shell">
+    <div id="mobile-drawer-backdrop" class="mobile-drawer-backdrop hidden"></div>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <div class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17L10 10L15 14L20 7"/><circle cx="20" cy="7" r="1.5" fill="currentColor"/></svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">LedgerFlow</span>
+            <span class="brand-tag" id="storage-badge">Desktop Vault</span>
+          </div>
+        </div>
+        <button class="icon-btn mobile-close" id="sidebar-collapse-btn" title="Toggle sidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+      </div>
+
+      <nav class="nav-list" id="nav-list">
+        <button class="nav-item active" data-view="overview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>
+          <span>Overview</span>
+        </button>
+        <button class="nav-item" data-view="ledgers">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="12" y1="6" x2="12" y2="14"/><line x1="8" y1="10" x2="16" y2="10"/></svg>
+          <span>Bank &amp; Party Ledgers</span>
+          <span class="nav-pill" id="nav-ledger-count">1</span>
+        </button>
+        <button class="nav-item" data-view="monthly">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+          <span>Monthly Intelligence</span>
+        </button>
+        <button class="nav-item" data-view="transactions">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+          <span>Transactions</span>
+          <span class="nav-pill" id="nav-tx-count">0</span>
+        </button>
+        <button class="nav-item" data-view="budgets">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6 3"/></svg>
+          <span>Budgets</span>
+        </button>
+        <button class="nav-item" data-view="recurring">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+          <span>Subscriptions & Bills</span>
+          <span class="nav-badge hidden" id="nav-due-count">0</span>
+        </button>
+        <button class="nav-item" data-view="accounts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          <span>Accounts & Cards</span>
+        </button>
+        <button class="nav-item" data-view="goals">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+          <span>Goals & Split IOUs</span>
+        </button>
+        <button class="nav-item" data-view="analytics">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 9l-5 5-4-4-3 3"/></svg>
+          <span>Analytics & Tax</span>
+        </button>
+        <button class="nav-item" data-view="rules">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <span>Smart Rules</span>
+        </button>
+        <button class="nav-item" data-view="ai">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
+          <span>AI Intelligence</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="nav-item" data-view="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.02 1.4 1.11H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Import, Backup & Settings</span>
+        </button>
+        <div class="net-worth-mini">
+          <div class="nw-label">Net Worth</div>
+          <div class="nw-value money-val" id="sidebar-net-worth">₹0</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-area">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn mobile-menu-btn" id="mobile-menu-btn" title="Menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <div>
+            <h1 class="page-title" id="page-title">Overview</h1>
+            <p class="page-subtitle" id="page-subtitle">Your financial pulse at a glance</p>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <button class="cmd-trigger" id="cmd-palette-btn" title="Quick Actions (Ctrl+K)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <span>Search or jump…</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+
+          <select id="global-period-select" class="select-compact" title="Reporting Period">
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="90d">Last 90 Days</option>
+            <option value="this_year">This Year</option>
+            <option value="all">All Time</option>
+            <option value="custom">Custom Range</option>
+          </select>
+
+          <button class="icon-btn" id="privacy-toggle-btn" title="Hide/Show Balances (P)">
+            <svg id="eye-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg id="eye-closed-icon" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+
+          <button class="icon-btn" id="theme-toggle-btn" title="Toggle Dark/Light Theme (T)">
+            <svg id="sun-icon" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <svg id="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+
+          <button class="btn btn-secondary" id="open-csv-import-btn" title="Import Bank Statement (Excel .xlsx, .xls, CSV, or PDF)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Import Excel / PDF</span>
+          </button>
+
+          <button class="btn btn-primary" id="quick-add-btn" title="Add Transaction (N)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>Add Entry</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Views Container -->
+      <main class="view-container" id="view-container">
+        <!-- Rendered dynamically by app.js -->
+      </main>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Mobile Navigation">
+      <div class="mobile-nav-indicator" id="mobile-nav-indicator" aria-hidden="true"></div>
+      <button type="button" class="mobile-nav-item active" data-view="overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>
+        <span>Home</span>
+      </button>
+      <button type="button" class="mobile-nav-item" data-view="ledgers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span>Ledgers</span>
+      </button>
+      <button type="button" class="mobile-nav-fab" id="mobile-fab-add" title="Add Entry">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button type="button" class="mobile-nav-item" data-view="transactions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <span>Entries</span>
+      </button>
+      <button type="button" class="mobile-nav-item" id="mobile-nav-more">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/></svg>
+        <span>More</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Transaction Add / Edit Modal -->
+  <div id="tx-modal" class="modal-backdrop hidden">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 id="tx-modal-title">New Transaction</h3>
+          <p class="muted text-sm">Record an expense, income, transfer, or split purchase</p>
+        </div>
+        <button class="icon-btn" data-close="tx-modal">&times;</button>
+      </div>
+      <form id="tx-form" class="modal-body">
+        <input type="hidden" id="tx-id" />
+        <div class="segmented-control" id="tx-type-tabs">
+          <button type="button" class="seg-btn active" data-type="expense">Expense</button>
+          <button type="button" class="seg-btn" data-type="income">Income</button>
+          <button type="button" class="seg-btn" data-type="transfer">Transfer</button>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="field">
+            <label>Amount <span class="req">*</span></label>
+            <div class="input-group">
+              <select id="tx-currency" class="currency-prefix"></select>
+              <input id="tx-amount" type="number" step="0.01" min="0.01" placeholder="0.00" required />
+            </div>
+            <div id="tx-fx-hint" class="field-hint hidden"></div>
+          </div>
+
+          <div class="field">
+            <label>Date & Time <span class="req">*</span></label>
+            <input id="tx-date" type="datetime-local" required />
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="field">
+            <label id="tx-payee-label">Merchant / Payee <span class="req">*</span></label>
+            <input id="tx-payee" type="text" placeholder="e.g. Whole Foods, Uber, Salary" list="payee-suggestions" required />
+            <datalist id="payee-suggestions"></datalist>
+          </div>
+
+          <div class="field" id="tx-account-field">
+            <label id="tx-account-label">Account / Card <span class="req">*</span></label>
+            <select id="tx-account" required></select>
+          </div>
+
+          <div class="field hidden" id="tx-to-account-field">
+            <label>To Destination Account <span class="req">*</span></label>
+            <select id="tx-to-account"></select>
+          </div>
+        </div>
+
+        <div class="form-grid-2" id="tx-category-row">
+          <div class="field">
+            <div class="flex-between">
+              <label>Category <span class="req">*</span></label>
+              <button type="button" class="link-btn text-xs" id="toggle-split-btn">+ Split Across Categories</button>
+            </div>
+            <select id="tx-category"></select>
+          </div>
+
+          <div class="field">
+            <label>Payment Method</label>
+            <select id="tx-method">
+              <option value="Card">Card</option>
+              <option value="UPI">UPI / Instant</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="Cash">Cash</option>
+              <option value="Digital Wallet">Digital Wallet</option>
+              <option value="Auto-Debit">Auto-Debit</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Split Transaction Builder -->
+        <div id="split-builder" class="split-box hidden">
+          <div class="flex-between mb-2">
+            <strong class="text-sm">Split Allocations</strong>
+            <span class="text-xs muted" id="split-remaining-label">Remaining: 0.00</span>
+          </div>
+          <div id="split-rows" class="split-rows"></div>
+          <button type="button" class="btn btn-ghost btn-sm mt-2" id="add-split-row-btn">+ Add Split Line</button>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="field">
+            <label>Cost Classification</label>
+            <select id="tx-cost-nature">
+              <option value="auto">Auto (Smart Rule / Category)</option>
+              <option value="fixed">Fixed Cost (Recurring / Mandatory)</option>
+              <option value="variable">Variable Cost (Discretionary / Usage)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Separate Ledger / Party / Drawings</label>
+            <select id="tx-ledger"></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Tags <span class="muted text-xs">(comma separated)</span></label>
+          <input id="tx-tags" type="text" placeholder="e.g. groceries, reimbursable, work" />
+        </div>
+
+        <div class="field">
+          <label>Receipt / Attachment</label>
+          <div class="receipt-upload-row">
+            <input id="tx-receipt-input" type="file" accept="image/*,.pdf" class="hidden" />
+            <button type="button" class="btn btn-secondary btn-sm" id="tx-receipt-btn">Attach Receipt</button>
+            <span id="tx-receipt-name" class="text-xs muted truncate">No file attached</span>
+            <button type="button" class="link-btn text-xs hidden" id="tx-receipt-clear">Remove</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Notes</label>
+          <textarea id="tx-notes" rows="2" placeholder="Optional details, invoice # or context..."></textarea>
+        </div>
+
+        <div class="check-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="tx-special" />
+            <span>Special / One-Off Expense</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="tx-tax-deductible" />
+            <span>Tax-Deductible / Business</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="tx-reconciled" checked />
+            <span>Cleared / Reconciled</span>
+          </label>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close="tx-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="tx-save-btn">Save Transaction</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Generic Secondary Modal (Accounts / Goals / Splits / Budgets / Rules / Receipt Viewer) -->
+  <div id="sub-modal" class="modal-backdrop hidden">
+    <div class="modal" id="sub-modal-box">
+      <div class="modal-header">
+        <h3 id="sub-modal-title">Modal</h3>
+        <button class="icon-btn" data-close="sub-modal">&times;</button>
+      </div>
+      <div id="sub-modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Smart Bank Statement Importer Modal (Excel & CSV) -->
+  <div id="csv-modal" class="modal-backdrop hidden">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3>Upload Bank Statement (Excel, PDF &amp; CSV)</h3>
+          <p class="muted text-sm">Drop .xlsx, .xls, .pdf, or .csv — LedgerFlow reads locally, categorizes, and auto-enters everything</p>
+        </div>
+        <button class="icon-btn" data-close="csv-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="segmented-control" id="csv-mode-tabs" style="grid-template-columns:repeat(2,1fr);">
+          <button type="button" class="seg-btn active" data-csv-tab="upload">Upload Statement</button>
+          <button type="button" class="seg-btn" data-csv-tab="logs">Import Logs (<span id="csv-logs-count">0</span>)</button>
+        </div>
+
+        <div id="csv-upload-panel" style="display:flex;flex-direction:column;gap:14px;">
+        <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
+          <div class="field" style="flex:1;min-width:200px;">
+            <div class="flex-between">
+              <label>Bank Account</label>
+              <button type="button" class="link-btn text-xs" id="csv-add-bank-btn">+ Add Bank Account</button>
+            </div>
+            <select id="csv-target-account"></select>
+          </div>
+          <div class="check-row" style="padding-top:14px;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="csv-is-protected" />
+              <span>Password-protected Excel / PDF</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="csv-review-before-import" />
+              <span>Preview before entering</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="stmt-password-box" class="hidden" style="padding:12px 14px;border:1px solid var(--amber);background:var(--amber-soft);border-radius:10px;">
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div>
+              <strong class="text-sm" id="stmt-pw-title">Password-Protected Statement (Excel / PDF)</strong>
+              <div class="text-xs muted" id="stmt-pw-desc">Enter the Excel or PDF password to unlock it and import or export entries.</div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+              <input id="stmt-file-password" type="password" placeholder="Enter Excel or PDF password" autocomplete="off" style="flex:1;min-width:160px;" />
+              <button type="button" class="btn btn-secondary btn-sm" id="stmt-pw-toggle-btn" title="Show/Hide Password">Show</button>
+              <button type="button" class="btn btn-primary btn-sm" id="stmt-unlock-retry-btn">Unlock &amp; Enter</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="stmt-unlock-export-btn">Unlock &amp; Export CSV</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="dropzone" id="csv-dropzone">
+          <input type="file" id="csv-file-input" accept=".xlsx,.xls,.csv,.tsv,.txt,.pdf,image/*,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" />
+          <input type="file" id="csv-pdf-input" accept=".pdf,application/pdf,image/*" class="hidden" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          <p><strong>Drop Excel (.xlsx / .xls), Bank PDF, CSV, or Photo</strong></p>
+          <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin:8px 0;">
+            <button type="button" class="btn btn-primary btn-sm" id="csv-browse-btn">Upload Excel / CSV</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="csv-pdf-btn">Upload Bank PDF (Local)</button>
+          </div>
+          <span class="muted text-xs">Reads Excel &amp; PDFs locally (including password-protected files) with zero API keys &bull; <button type="button" class="link-btn" id="csv-load-sample-btn">Try sample</button> &bull; <button type="button" class="link-btn" id="csv-ocr-toggle-btn">Paste / OCR Text</button></span>
+        </div>
+
+        <div id="csv-ocr-panel" class="hidden mt-2" style="padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--bg);">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+            <strong class="text-sm">OCR &amp; AI Statement Converter (Any Bank / Upside-Down / Unstructured Format)</strong>
+            <span class="text-xs muted">Converts raw PDF/OCR/screenshot text into normalized chronological entries</span>
+          </div>
+          <textarea id="csv-ocr-text" rows="5" placeholder="Paste any bank statement text, OCR output, WhatsApp/SMS log, or messy table rows here... Then click Convert with OCR + AI."></textarea>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" id="csv-ocr-offline-btn">Smart OCR Parse (Offline)</button>
+            <button type="button" class="btn btn-primary btn-sm" id="csv-ocr-ai-btn">OCR + AI Extract &amp; Feed</button>
+          </div>
+        </div>
+
+        <div id="csv-mapping-section" class="hidden mt-2">
+          <div id="stmt-meta-banner" class="hidden mb-3" style="padding:10px 14px;border-radius:10px;background:var(--primary-soft);border:1px solid var(--border);display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;font-size:12.5px;"></div>
+
+          <div class="check-row mb-2">
+            <label class="checkbox-label">
+              <input type="checkbox" id="csv-skip-dupes" checked />
+              <span>Skip duplicates</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="csv-sync-opening" checked />
+              <span id="csv-sync-opening-label">Sync account balance from statement</span>
+            </label>
+          </div>
+
+          <details id="csv-advanced-details" style="border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:var(--bg);">
+            <summary class="text-xs muted" style="cursor:pointer;font-weight:600;">Advanced Column Mapping (auto-detected)</summary>
+            <div class="form-grid-4 mt-2">
+              <div class="field">
+                <label>Date Format</label>
+                <select id="csv-date-format">
+                  <option value="auto">Auto-Detect</option>
+                  <option value="dmy">DD/MM/YYYY</option>
+                  <option value="mdy">MM/DD/YYYY</option>
+                  <option value="ymd">YYYY-MM-DD</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Amount Mode</label>
+                <select id="csv-amount-mode">
+                  <option value="split">Debit &amp; Credit</option>
+                  <option value="single">Single Amount</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Header Row</label>
+                <select id="csv-header-row"></select>
+              </div>
+              <div class="field">
+                <label>Date Column</label>
+                <select id="csv-col-date"></select>
+              </div>
+            </div>
+            <div class="form-grid-4 mt-2">
+              <div class="field">
+                <label>Details Column</label>
+                <select id="csv-col-payee"></select>
+              </div>
+              <div class="field" id="csv-debit-wrap">
+                <label>Debit Column</label>
+                <select id="csv-col-debit"></select>
+              </div>
+              <div class="field" id="csv-credit-wrap">
+                <label>Credit Column</label>
+                <select id="csv-col-credit"></select>
+              </div>
+              <div class="field hidden" id="csv-single-amt-wrap">
+                <label>Amount Column</label>
+                <select id="csv-col-amount"></select>
+              </div>
+            </div>
+            <label class="checkbox-label hidden mt-2" id="csv-invert-wrap">
+              <input type="checkbox" id="csv-invert-signs" />
+              <span>Invert signs (positive = expense)</span>
+            </label>
+          </details>
+
+          <div class="table-wrap mt-3" style="max-height:240px;">
+            <table class="data-table" id="csv-preview-table"></table>
+          </div>
+          <div class="modal-footer">
+            <span class="muted text-sm" id="csv-summary-text"></span>
+            <div class="flex-gap">
+              <button type="button" class="btn btn-ghost" data-close="csv-modal">Cancel</button>
+              <button type="button" class="btn btn-secondary" id="csv-export-parsed-btn">Export CSV</button>
+              <button type="button" class="btn btn-primary" id="csv-confirm-import-btn">Auto-Enter Entries</button>
+            </div>
+          </div>
+        </div>
+        </div>
+
+        <div id="csv-logs-panel" class="hidden" style="display:flex;flex-direction:column;gap:10px;">
+          <div class="text-xs muted">Review every imported bank statement batch. If you uploaded a statement into the wrong bank account, delete that import below to remove its entries and restore the balance, then re-upload into the right bank.</div>
+          <div id="csv-logs-list" style="display:flex;flex-direction:column;gap:8px;max-height:380px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Palette (Ctrl+K) -->
+  <div id="cmd-modal" class="modal-backdrop hidden">
+    <div class="cmd-box">
+      <div class="cmd-input-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input id="cmd-input" type="text" placeholder="Type a command, page, merchant, or action..." autocomplete="off" />
+        <kbd>ESC</kbd>
+      </div>
+      <div id="cmd-results" class="cmd-results"></div>
+    </div>
+  </div>
+
+  <!-- Toast Stack -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
