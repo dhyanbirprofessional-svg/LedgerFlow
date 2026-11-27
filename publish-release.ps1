@@ -66,7 +66,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # 6. Commit & push to GitHub + publish GitHub Release with binaries attached
 Set-Location $root
 git add -A
-git commit -m "Release v$Version: $Notes"
+git commit -m "Release v${Version}: $Notes"
 git push origin main
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

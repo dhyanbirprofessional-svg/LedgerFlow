@@ -4,11 +4,16 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.KeyguardManager;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.hardware.biometrics.BiometricManager;
 import android.hardware.biometrics.BiometricPrompt;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -47,6 +52,8 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQ = 4101;
@@ -56,6 +63,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
     private final Object fileLock = new Object();
+    private final ExecutorService bgExecutor = Executors.newCachedThreadPool();
     private File dataFile;
     private File backupsDir;
 
@@ -176,6 +184,12 @@ public class MainActivity extends Activity {
             byte[] err = ("Missing asset: " + assetPath).getBytes(StandardCharsets.UTF_8);
             return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(err));
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        try { bgExecutor.shutdownNow(); } catch (Exception ignored) {}
+        super.onDestroy();
     }
 
     @Override
@@ -454,30 +468,46 @@ public class MainActivity extends Activity {
             startBiometricPrompt();
         }
 
+        private void dispatchAsyncResult(final String cbId, final String payloadJson) {
+            runOnUiThread(() -> {
+                if (webView == null) return;
+                String js = "if(window.__lfAndroidAsyncResolve){window.__lfAndroidAsyncResolve("
+                        + JSONObject.quote(cbId == null ? "" : cbId) + ","
+                        + JSONObject.quote(payloadJson == null ? "{}" : payloadJson) + ");}";
+                webView.evaluateJavascript(js, null);
+            });
+        }
+
         @JavascriptInterface
         public String checkOnlineJson() {
-            String[] probes = new String[] {
-                "https://clients3.google.com/generate_204",
-                "https://generativelanguage.googleapis.com/"
-            };
-            for (String probe : probes) {
-                HttpURLConnection conn = null;
-                try {
-                    conn = (HttpURLConnection) new URL(probe).openConnection();
-                    conn.setRequestMethod("HEAD");
-                    conn.setConnectTimeout(3500);
-                    conn.setReadTimeout(3500);
-                    conn.setInstanceFollowRedirects(false);
-                    int code = conn.getResponseCode();
-                    if (code >= 200 && code < 500) {
-                        return "{\"online\":true}";
-                    }
-                } catch (Exception ignored) {
-                } finally {
-                    if (conn != null) conn.disconnect();
+            try {
+                ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                if (cm == null) return "{\"online\":false}";
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    Network net = cm.getActiveNetwork();
+                    if (net == null) return "{\"online\":false}";
+                    NetworkCapabilities caps = cm.getNetworkCapabilities(net);
+                    boolean ok = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                    return "{\"online\":" + (ok ? "true" : "false") + "}";
+                } else {
+                    @SuppressWarnings("deprecation")
+                    NetworkInfo ni = cm.getActiveNetworkInfo();
+                    boolean ok = ni != null && ni.isConnected();
+                    return "{\"online\":" + (ok ? "true" : "false") + "}";
                 }
+            } catch (Exception ignored) {
+                return "{\"online\":true}";
             }
-            return "{\"online\":false}";
+        }
+
+        @JavascriptInterface
+        public void checkUpdateJsonAsync(final String cbId, final String ghToken) {
+            bgExecutor.execute(() -> dispatchAsyncResult(cbId, checkUpdateJson(ghToken)));
+        }
+
+        @JavascriptInterface
+        public void aiHttpPostAsync(final String cbId, final String urlStr, final String headersJson, final String bodyJson) {
+            bgExecutor.execute(() -> dispatchAsyncResult(cbId, aiHttpPost(urlStr, headersJson, bodyJson)));
         }
 
         @JavascriptInterface

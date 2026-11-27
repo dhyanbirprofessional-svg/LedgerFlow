@@ -1,8 +1,8 @@
-{
-  "version": "1.0.1",
-  "repo": "dhyanbirprofessional-svg/LedgerFlow",
-  "notes": "Fixed SBI PDF parsing, built-in AI + Gemini 3.8 Flash, mandatory online gate, and automatic GitHub update checks.",
-  "windowsAsset": "LedgerFlow-Setup.exe",
-  "androidAsset": "LedgerFlow.apk",
-  "releaseUrl": "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"
+﻿{
+    "version":  "1.0.2",
+    "repo":  "dhyanbirprofessional-svg/LedgerFlow",
+    "notes":  "Fix clicks/hangs/crashes (async Android bridge, Settings esc fix, toast pointer pass-through) and use Gemini strictly to verify PDFs before importing entries.",
+    "windowsAsset":  "LedgerFlow-Setup.exe",
+    "androidAsset":  "LedgerFlow.apk",
+    "releaseUrl":  "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"
 }

@@ -473,6 +473,7 @@
 
         <div id="csv-mapping-section" class="hidden mt-2">
           <div id="stmt-meta-banner" class="hidden mb-3" style="padding:10px 14px;border-radius:10px;background:var(--primary-soft);border:1px solid var(--border);display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;font-size:12.5px;"></div>
+          <div id="csv-gemini-report" class="hidden mb-3" style="padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);font-size:12.5px;"></div>
 
           <div class="check-row mb-2">
             <label class="checkbox-label">
@@ -544,6 +545,7 @@
             <span class="muted text-sm" id="csv-summary-text"></span>
             <div class="flex-gap">
               <button type="button" class="btn btn-ghost" data-close="csv-modal">Cancel</button>
+              <button type="button" class="btn btn-secondary" id="csv-gemini-check-btn">Check PDF with Gemini</button>
               <button type="button" class="btn btn-secondary" id="csv-export-parsed-btn">Export CSV</button>
               <button type="button" class="btn btn-primary" id="csv-confirm-import-btn">Auto-Enter Entries</button>
             </div>

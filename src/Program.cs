@@ -79,6 +79,8 @@ namespace LedgerFlowHost {
 
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
+                ServicePointManager.DefaultConnectionLimit = 16;
+                ServicePointManager.Expect100Continue = false;
 
                 SetupTray();
                 LaunchAppWindow();
@@ -639,17 +641,21 @@ namespace LedgerFlowHost {
         }
 
         static bool CheckInternetReachable() {
+            try {
+                if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable()) return false;
+            } catch { }
             ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls;
             string[] probes = new[] {
                 "https://clients3.google.com/generate_204",
+                "https://api.github.com/",
                 "https://generativelanguage.googleapis.com/"
             };
             foreach (string probe in probes) {
                 try {
                     var req = (HttpWebRequest)WebRequest.Create(probe);
                     req.Method = "HEAD";
-                    req.Timeout = 3500;
-                    req.ReadWriteTimeout = 3500;
+                    req.Timeout = 2000;
+                    req.ReadWriteTimeout = 2000;
                     req.AllowAutoRedirect = false;
                     using (var resp = (HttpWebResponse)req.GetResponse()) {
                         if ((int)resp.StatusCode >= 200 && (int)resp.StatusCode < 500) return true;

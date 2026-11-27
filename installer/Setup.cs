@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -14,7 +14,7 @@ using Microsoft.Win32;
 namespace LedgerFlowSetup {
     static class Program {
         private const string AppName = "LedgerFlow";
-        private const string AppVersion = "1.0.1";
+        private const string AppVersion = "1.0.2";
         private const string Publisher = "LedgerFlow Software";
         private const string UninstallRegPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\LedgerFlow";
 
@@ -108,14 +108,14 @@ namespace LedgerFlowSetup {
                 if (onProgress != null) onProgress(80, "Creating Start Menu shortcuts...");
                 string startDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), AppName);
                 Directory.CreateDirectory(startDir);
-                CreateShortcut(Path.Combine(startDir, AppName + ".lnk"), mainExe, installDir, "LedgerFlow — Smart Personal Finance & Expense Tracker", mainExe + ",0", "");
+                CreateShortcut(Path.Combine(startDir, AppName + ".lnk"), mainExe, installDir, "LedgerFlow â€” Smart Personal Finance & Expense Tracker", mainExe + ",0", "");
                 CreateShortcut(Path.Combine(startDir, "Uninstall " + AppName + ".lnk"), uninstallExe, installDir, "Uninstall LedgerFlow", uninstallExe + ",0", "--uninstall");
             }
 
             if (createDesktopShortcut) {
                 if (onProgress != null) onProgress(88, "Creating Desktop shortcut...");
                 string desktopLnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), AppName + ".lnk");
-                CreateShortcut(desktopLnk, mainExe, installDir, "LedgerFlow — Expense Tracker", mainExe + ",0", "");
+                CreateShortcut(desktopLnk, mainExe, installDir, "LedgerFlow â€” Expense Tracker", mainExe + ",0", "");
             }
 
             if (registerUninstall) {
@@ -255,7 +255,7 @@ namespace LedgerFlowSetup {
         private bool installDone = false;
 
         public SetupForm() {
-            Text = "LedgerFlow Setup — v1.0.0";
+            Text = "LedgerFlow Setup â€” v1.0.0";
             ClientSize = new Size(560, 420);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
