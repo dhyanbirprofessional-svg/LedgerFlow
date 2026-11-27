@@ -4,5 +4,5 @@ using System.Reflection;
 [assembly: AssemblyDescription("LedgerFlow Personal Finance & Expense Tracker Installer")]
 [assembly: AssemblyProduct("LedgerFlow Setup")]
 [assembly: AssemblyCompany("LedgerFlow Software")]
-[assembly: AssemblyVersion("1.0.3.0")]
-[assembly: AssemblyFileVersion("1.0.3.0")]
+[assembly: AssemblyVersion("1.0.4.0")]
+[assembly: AssemblyFileVersion("1.0.4.0")]

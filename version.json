@@ -1,7 +1,7 @@
 {
-    "version":  "1.0.3",
+    "version":  "1.0.4",
     "repo":  "dhyanbirprofessional-svg/LedgerFlow",
-    "notes":  "Add direct 1-click Check \u0026 Install Updates button in topbar/sidebar, in-app Android APK installer (ApkContentProvider), silent Windows relaunch updater, and fix UTF-8 text encoding.",
+    "notes":  "Fix missing final-page skewed PDF rows (e.g. 27/11/2026 closing balance reconciliation), filter orphaned Balance header fragments, strip inline - - placeholders, and pause on Statement Summary mismatch.",
     "windowsAsset":  "LedgerFlow-Setup.exe",
     "androidAsset":  "LedgerFlow.apk",
     "releaseUrl":  "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"

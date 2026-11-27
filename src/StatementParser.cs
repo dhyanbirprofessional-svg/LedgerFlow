@@ -2329,10 +2329,10 @@ namespace LedgerFlowHost {
                     }
 
                     if (matchedHdr != null) {
-                        // Absorb any immediate trailing wrapped header line (e.g. "No" or "(₹)" or "Balance" within 15pt)
+                        // Absorb any immediate trailing wrapped header line (e.g. "No" or "(₹)" or "Balance" within 28pt)
                         while (hdrEndIdx + 1 < pageSpans.Count
-                            && Math.Abs(pageSpans[hdrEndIdx].Y - pageSpans[hdrEndIdx + 1].Y) <= 15.0
-                            && pageSpans[hdrEndIdx + 1].Spans.Count <= 3
+                            && Math.Abs(pageSpans[hdrEndIdx].Y - pageSpans[hdrEndIdx + 1].Y) <= 28.0
+                            && pageSpans[hdrEndIdx + 1].Spans.Count <= 5
                             && IsPdfHeaderFragmentLine(pageSpans[hdrEndIdx + 1].Spans)
                             && !IsPdfHeaderCellRow(pageSpans[hdrEndIdx + 1].Spans)) {
                             matchedHdr = MergeTwoHeaderLines(matchedHdr, pageSpans[hdrEndIdx + 1].Spans);
@@ -2377,6 +2377,7 @@ namespace LedgerFlowHost {
 
                         foreach (var sp in spans) {
                             int bestCol = MatchPdfHeaderColumn(sp, activeHeaderCols);
+                            if (IsPdfPlaceholderDash(sp.Text) && !string.IsNullOrEmpty(aligned[bestCol])) continue;
                             if (string.IsNullOrEmpty(aligned[bestCol])) {
                                 aligned[bestCol] = sp.Text;
                             } else {

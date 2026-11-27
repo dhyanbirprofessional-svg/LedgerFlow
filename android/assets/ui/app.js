@@ -41,7 +41,7 @@
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const API_TOKEN = URL_PARAMS.get("token") || "";
   const IS_PREVIEW_PARAM = URL_PARAMS.get("preview") === "1";
-  const APP_VERSION = "1.0.3";
+  const APP_VERSION = "1.0.4";
   const GITHUB_REPO = "dhyanbirprofessional-svg/LedgerFlow";
 
   let isDesktopHost = false;
@@ -6014,8 +6014,25 @@
     const hasGeminiCheck = aiCfg.provider === "gemini" && aiCfg.mode !== "local" && String(aiCfg.apiKey || "").trim().length > 10;
     const isPdfSource = String(meta.format || "").toLowerCase().startsWith("pdf") || /\.pdf$/i.test(meta.fileName || "");
 
-    // Pause before pushing entries when Gemini PDF check is enabled (or Preview is checked)
-    if (!reviewWanted && !(hasGeminiCheck && isPdfSource) && entries.length > 0) {
+    let summaryMismatch = false;
+    const sums = meta?.summaries || [];
+    if (sums.length && entries.length > 0) {
+      let dCnt = 0, cCnt = 0, dSum = 0, cSum = 0;
+      for (const e of entries) {
+        if (e.type === "expense") { dCnt++; dSum += e.amount; }
+        else { cCnt++; cSum += e.amount; }
+      }
+      const expDr = sums.reduce((s, x) => s + x.drCount, 0);
+      const expCr = sums.reduce((s, x) => s + x.crCount, 0);
+      const expDeb = sums.reduce((s, x) => s + x.totalDebits, 0);
+      const expCred = sums.reduce((s, x) => s + x.totalCredits, 0);
+      if (dCnt !== expDr || cCnt !== expCr || Math.abs(dSum - expDeb) >= 0.05 || Math.abs(cSum - expCred) >= 0.05) {
+        summaryMismatch = true;
+      }
+    }
+
+    // Pause before pushing entries when Gemini PDF check is enabled, Preview is checked, or Statement Summary differs
+    if (!reviewWanted && !summaryMismatch && !(hasGeminiCheck && isPdfSource) && entries.length > 0) {
       confirmStatementImport();
       return;
     }
@@ -6026,6 +6043,11 @@
       if (adv) adv.open = true;
     }
     refreshCSVPreview();
+    if (summaryMismatch && repEl) {
+      repEl.className = "mb-3";
+      repEl.style.borderColor = "var(--amber)";
+      repEl.innerHTML = "<strong>⚠ Balance / Count Check:</strong> Statement Summary total differs from extracted entries. Check details or run <strong>Check PDF with Gemini</strong> before clicking Auto-Enter Entries.";
+    }
 
     if (hasGeminiCheck && entries.length > 0) {
       verifyStatementWithGeminiBeforeImport();
@@ -6283,9 +6305,12 @@
     const histIdx = buildHistoricalClassifierIndex();
     const entries = [];
     let pendingRow = null;
+    let pendingAmountRow = null;
     let upcomingPreLines = [];
     let inSummaryBlock = false;
     const isDashPlaceholder = (s) => /^[-–—]+(?:\s+[-–—]+)*$/.test(s) || /^(na|n\/a|nil)$/i.test(s);
+    const stripInlineDashes = (s) => String(s || "").replace(/(?:^|\s)-\s+-(?=\s|$)/g, " ").replace(/\s+/g, " ").trim();
+    const standaloneHdrRe = /^(value\s+date|post\s+date|txn\s+date|details|particulars|particular|narration|ref(\s*no)?\/?|cheque(\s*no)?|chq(\s*no)?|no\.?|debit(\s*\(₹\))?|credit(\s*\(₹\))?|balance(\s*\(₹\))?|amount(\s*\(₹\))?|dr|cr|₹|rs\.?|-+|\s)+$/i;
     const newTxPrefixRe = /^(WDL\s+TFR|DEP\s+TFR|POS\s+ATM(?:\s+PURCH)?|ATM\s+(?:WDL|CASH)|CASH\s+(?:DEP|WDL)|CREDIT\s+(?:Chq|TFR|TRANSFER)|DEBIT\s+(?:Chq|TFR|TRANSFER)|CEMTEX\s+DEP|BY\s+TRANSFER|TO\s+TRANSFER|BULK\s+POSTING|CLG\s+CHQ|INTEREST\s+CREDIT|UPI\/(?:DR|CR|REV|DRC|REVERSAL|REF)\/|IMPS\/|NEFT[\*\/\-]|RTGS[\*\/\-]|ACH(?:DR|CR)?[\s\/\-]|NACH[\s\/\-])\b/i;
 
     const extractRowAmount = (r) => {
@@ -6358,6 +6383,7 @@
       // Support combined multi-statement uploads where a new table header repeats mid-file
       if (isStatementHeaderRow(r)) {
         pendingRow = null;
+        pendingAmountRow = null;
         upcomingPreLines = [];
         inSummaryBlock = false;
         const nextCols = detectColumnsFromHeaders(r, csvParsedState.dataRows.slice(i + 1));
@@ -6380,6 +6406,7 @@
       const joined = unwrapBankText(r.join(" "));
       if (/\b(statement\s+summary|brought\s+forward\s*\(|dr\s+count\b.*\bcr\s+count|total\s+debits\b.*\btotal\s+credits)\b/i.test(joined)) {
         pendingRow = null;
+        pendingAmountRow = null;
         upcomingPreLines = [];
         inSummaryBlock = true;
         continue;
@@ -6388,6 +6415,7 @@
       if (/(please do not share your atm|debit\/credit card number|personal identification number|power of attorney holder|computer generated statement|does not require a signature|abbreviations are as under|end of statement)/i.test(joined)
         || /^(page(\s*no\.?)?\b|account statement|opening balance|closing balance|total\b|grand total|carried forward|brought forward|statement summary|ifsc\s*:|micr\s*:|branch\s*:)/i.test(joined)) {
         pendingRow = null;
+        pendingAmountRow = null;
         upcomingPreLines = [];
         continue;
       }
@@ -6397,16 +6425,16 @@
       const rowBal = (balIdx >= 0 && r[balIdx] !== undefined && String(r[balIdx]).trim() !== "")
         ? parseAmountNumber(r[balIdx])
         : null;
-      const rawCellVal = unwrapBankText(r[pIdx] || "");
+      const rawCellVal = stripInlineDashes(unwrapBankText(r[pIdx] || ""));
       const rawNarrCell = isDashPlaceholder(rawCellVal) ? "" : rawCellVal;
       const colRefRaw = refIdx >= 0 ? String(r[refIdx] || "").trim() : "";
       const colRef = isDashPlaceholder(colRefRaw) ? "" : colRefRaw;
 
       if (!isoDate) {
-        if (absAmt < 0.01 && /^(value\s+date|post\s+date|txn\s+date|details|particulars|narration|ref\s*no\/?|cheque(\s*no)?|no\.?|debit|credit|balance|amount|₹|-+|\s)+$/i.test(joined)) {
+        if (absAmt < 0.01 && !newTxPrefixRe.test(joined) && standaloneHdrRe.test(joined)) {
           continue;
         }
-        const extra = rawNarrCell || extractExtraText(r);
+        const extra = stripInlineDashes(rawNarrCell || extractExtraText(r));
         if (pendingRow) {
           if (extra) pendingRow.rawNarration = `${pendingRow.rawNarration} ${extra}`.trim();
           if (colRef && !pendingRow.colRef) pendingRow.colRef = colRef;
@@ -6415,13 +6443,28 @@
             pushEntry(pendingRow.isoDate, pendingRow.rawNarration, type, absAmt, pendingRow.colRef, pendingRow.rowBal);
             pendingRow = null;
           }
+        } else if (absAmt >= 0.01) {
+          // PDF Y-skew placed amount/balance slightly above its Date cell
+          const pre = upcomingPreLines.length ? upcomingPreLines.join(" ") : "";
+          upcomingPreLines = [];
+          pendingAmountRow = {
+            type,
+            absAmt,
+            rowBal,
+            colRef,
+            extra: [pre, extra].filter(Boolean).join(" ").trim()
+          };
         } else if (absAmt < 0.01 && extra) {
-          if (upcomingPreLines.length > 0 || entries.length === 0 || newTxPrefixRe.test(extra)) {
-            upcomingPreLines.push(extra);
+          const cleanLead = extra.replace(/^[\s\-–—•|]+/, "").trim();
+          if (upcomingPreLines.length > 0 || entries.length === 0 || newTxPrefixRe.test(cleanLead)) {
+            upcomingPreLines.push(cleanLead);
+          } else if (pendingAmountRow) {
+            pendingAmountRow.extra = `${pendingAmountRow.extra} ${extra}`.trim();
+            if (pendingAmountRow.rowBal === null && rowBal !== null) pendingAmountRow.rowBal = rowBal;
           } else {
             // Multi-line wrapped PDF narration continuation row
             const prev = entries[entries.length - 1];
-            const mergedRaw = `${prev.rawNarration} ${extra}`.trim();
+            const mergedRaw = stripInlineDashes(`${prev.rawNarration} ${extra}`);
             const reParsed = parseBankNarration(mergedRaw, prev.type === "income");
             prev.rawNarration = mergedRaw;
             prev.payee = reParsed.payee;
@@ -6439,9 +6482,15 @@
       const preText = upcomingPreLines.length ? upcomingPreLines.join(" ") : "";
       upcomingPreLines = [];
       const rowText = rawNarrCell || extractExtraText(r);
-      const combinedNarr = [preText, rowText].filter(Boolean).join(" ").trim();
+      const combinedNarr = stripInlineDashes([preText, rowText].filter(Boolean).join(" "));
 
       if (absAmt < 0.01) {
+        if (pendingAmountRow) {
+          const pairedNarr = stripInlineDashes([pendingAmountRow.extra, combinedNarr].filter(Boolean).join(" "));
+          pushEntry(isoDate, pairedNarr, pendingAmountRow.type, pendingAmountRow.absAmt, pendingAmountRow.colRef || colRef, pendingAmountRow.rowBal ?? rowBal);
+          pendingAmountRow = null;
+          continue;
+        }
         if (combinedNarr) {
           pendingRow = {
             isoDate,
@@ -6453,6 +6502,7 @@
         continue;
       }
 
+      pendingAmountRow = null;
       pushEntry(isoDate, combinedNarr, type, absAmt, colRef, rowBal);
     }
 

@@ -2632,8 +2632,8 @@ public final class StatementParser {
 
                 if (matchedHdr != null) {
                     while (hdrEndIdx + 1 < pageSpans.size()
-                            && Math.abs(pageSpans.get(hdrEndIdx).y - pageSpans.get(hdrEndIdx + 1).y) <= 15.0
-                            && pageSpans.get(hdrEndIdx + 1).spans.size() <= 3
+                            && Math.abs(pageSpans.get(hdrEndIdx).y - pageSpans.get(hdrEndIdx + 1).y) <= 28.0
+                            && pageSpans.get(hdrEndIdx + 1).spans.size() <= 5
                             && isPdfHeaderFragmentLine(pageSpans.get(hdrEndIdx + 1).spans)
                             && !isPdfHeaderCellRow(pageSpans.get(hdrEndIdx + 1).spans)) {
                         matchedHdr = mergeTwoHeaderLines(matchedHdr, pageSpans.get(hdrEndIdx + 1).spans);
@@ -2678,6 +2678,7 @@ public final class StatementParser {
 
                     for (PdfCellSpan sp : spans) {
                         int bestCol = matchPdfHeaderColumn(sp, activeHeaderCols);
+                        if (isPdfPlaceholderDash(sp.text) && !aligned[bestCol].isEmpty()) continue;
                         if (aligned[bestCol].isEmpty()) aligned[bestCol] = sp.text;
                         else aligned[bestCol] = aligned[bestCol] + " " + sp.text;
                     }
