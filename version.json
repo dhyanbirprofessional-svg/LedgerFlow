@@ -1,7 +1,7 @@
 {
-    "version":  "1.0.7",
+    "version":  "1.0.8",
     "repo":  "dhyanbirprofessional-svg/LedgerFlow",
-    "notes":  "Redesign desktop \u0026 mobile UI into clean Core / Planning / Intelligence sections with improved spacing and visual hierarchy; integrate LedgerFlow AI Q\u0026A chat directly with Google Gemini (plus OpenAI/Ollama) using live ledger snapshots \u0026 matching transactions; replace 25MB regex PDF indexer with ultra-fast single-pass byte scanner (fixes 400-500 page hang at Indexing PDF objects); upgrade live PDF progress modal with 4 pipeline phase indicators, elapsed timer, percentages, and live transactions feed.",
+    "notes":  "Fix Indian Bank \u0026 multi-page PDF statement parsing 100%: stop Brought Forward rows from disabling column alignment on subsequent transactions, handle vertically centered pre+post date narration blocks \u0026 /BRANCH footers, fix Dr/Cr suffix parsing on Overdraft balances (e.g. 241845.44Dr), extract Indian Bank grand Statement Summary \u0026 bank metadata cleanly (100% reconciled 2,665 entries on 344-page statement).",
     "windowsAsset":  "LedgerFlow-Setup.exe",
     "androidAsset":  "LedgerFlow.apk",
     "releaseUrl":  "https://github.com/dhyanbirprofessional-svg/LedgerFlow/releases/latest"

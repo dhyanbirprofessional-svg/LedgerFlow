@@ -41,7 +41,7 @@
   const URL_PARAMS = new URLSearchParams(window.location.search);
   const API_TOKEN = URL_PARAMS.get("token") || "";
   const IS_PREVIEW_PARAM = URL_PARAMS.get("preview") === "1";
-  const APP_VERSION = "1.0.7";
+  const APP_VERSION = "1.0.8";
   const GITHUB_REPO = "dhyanbirprofessional-svg/LedgerFlow";
 
   let isDesktopHost = false;
@@ -5232,34 +5232,56 @@
 
   function extractBankMeta(rows) {
     const meta = { summaries: [] };
+    const detectBankFromText = (txt) => {
+      if (/indian\s*bank|\bidib0/i.test(txt)) return "Indian Bank";
+      if (/state bank of india|\bsbin0/i.test(txt)) return "State Bank of India";
+      if (/punjab national bank|\bpnb\b|\bpunb0/i.test(txt)) return "Punjab National Bank (PNB)";
+      if (/hdfc bank|\bhdfc0/i.test(txt)) return "HDFC Bank";
+      if (/icici bank|\bicic0/i.test(txt)) return "ICICI Bank";
+      if (/axis bank|\butib0/i.test(txt)) return "Axis Bank";
+      if (/kotak mahindra|\bkkbk0/i.test(txt)) return "Kotak Mahindra Bank";
+      if (/bank of baroda|\bbarb0/i.test(txt)) return "Bank of Baroda";
+      if (/canara bank|\bcnrb0/i.test(txt)) return "Canara Bank";
+      return "";
+    };
+    const headerScanEnd = Math.min(rows.length, 30);
+    for (let i = 0; i < headerScanEnd && !meta.bank; i++) {
+      meta.bank = detectBankFromText((rows[i] || []).filter(Boolean).join(" | "));
+    }
+    let sawClosingBal = false;
+    let lastClosingBal = null;
     for (let i = 0; i < rows.length; i++) {
-      const joined = rows[i].filter(Boolean).join(" | ");
-      if (!meta.bank) {
-        if (/state bank of india|\bsbin0/i.test(joined)) meta.bank = "State Bank of India";
-        else if (/punjab national bank|\bpnb\b|\bpunb0/i.test(joined)) meta.bank = "Punjab National Bank (PNB)";
-        else if (/hdfc bank|\bhdfc0/i.test(joined)) meta.bank = "HDFC Bank";
-        else if (/icici bank|\bicic0/i.test(joined)) meta.bank = "ICICI Bank";
-        else if (/axis bank|\butib0/i.test(joined)) meta.bank = "Axis Bank";
-        else if (/kotak mahindra|\bkkbk0/i.test(joined)) meta.bank = "Kotak Mahindra Bank";
-        else if (/bank of baroda|\bbarb0/i.test(joined)) meta.bank = "Bank of Baroda";
-        else if (/canara bank|\bcnrb0/i.test(joined)) meta.bank = "Canara Bank";
+      const joined = (rows[i] || []).filter(Boolean).join(" | ");
+      if (!meta.bank && i >= headerScanEnd && i < 120) {
+        meta.bank = detectBankFromText(joined);
       }
       if (!meta.accountNumber) {
-        const accM = joined.match(/Account\s*(?:Statement\s*For\s*Account|Number|No\.?)\s*[:\-]\s*([X*\d]{4,})/i);
+        const accM = joined.match(/Account\s*(?:Statement\s*For\s*Account|Number|No\.?)\s*[:\-]\s*\|?\s*([X*\d]{4,})/i);
         if (accM) meta.accountNumber = accM[1].trim();
       }
       if (!meta.period) {
         const perM = joined.match(/Statement\s*(?:From|Period)\s*[:\-]?\s*\|?\s*([^\n]+?)(?:\s*\|\s*Nominee|\s*$)/i);
         if (perM) {
-          const cleanPer = perM[1].replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+          let cleanPer = perM[1].replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+          if (i + 1 < rows.length) {
+            const nextJ = (rows[i + 1] || []).filter(Boolean).join(" | ");
+            const toM = nextJ.match(/\bTo\s*[:\-]\s*\|?\s*(\d{1,2}[\-\/\s][A-Za-z0-9]+[\-\/\s]\d{2,4})/i);
+            if (toM && !cleanPer.toLowerCase().includes("to ")) cleanPer += " to " + toM[1].trim();
+          }
           if (/\d/.test(cleanPer)) meta.period = cleanPer;
         }
       }
       if (!meta.balance) {
-        const balM = joined.match(/Clear\s*Balance\s*[:\-]\s*([^\n|]+)/i);
+        const balM = joined.match(/Clear(?:ed)?\s*Balance\s*[:\-]\s*\|?\s*([^\n|]+)/i);
         if (balM) meta.balance = balM[1].trim();
       }
-      if (/Brought Forward/i.test(joined) && i + 1 < rows.length) {
+      const closeM = joined.match(/CLOSING\s+BALANCE\s*[:\-]\s*\|?\s*([^\n|]+)/i);
+      if (closeM) {
+        sawClosingBal = true;
+        lastClosingBal = parseAmountNumber(closeM[1]);
+      }
+      // SBI / standard "Brought Forward | Dr Count | Cr Count | Total Debits | Total Credits | Closing" summary
+      if (/Brought Forward/i.test(joined) && /Dr\s*Count/i.test(joined) && i + 1 < rows.length) {
         const rawVals = (rows[i + 1] || []).map((c) => String(c || "").trim()).filter(Boolean);
         const vals = rawVals.length >= 6 ? rawVals : rawVals.join(" ").split(/\s+/).filter(Boolean);
         if (vals.length >= 6) {
@@ -5272,6 +5294,27 @@
           if (drCount > 0 || crCount > 0 || totalDebits > 0 || totalCredits > 0) {
             meta.summaries.push({ bf, drCount, crCount, totalDebits, totalCredits, closingBal });
           }
+        }
+      } else if (/Brought Forward/i.test(joined) && meta.openingBalance === undefined) {
+        const vals = (rows[i] || []).map((c) => String(c || "").trim()).filter(Boolean);
+        const balToken = vals.find((v) => /[\d,]+\.\d{1,2}/.test(v));
+        if (balToken) meta.openingBalance = parseAmountNumber(balToken);
+      }
+      // Indian Bank final grand summary: "Dr. Count: | 109 | Cr. Count: | 2556 | 930949.42 | 953124.50" after CLOSING BALANCE
+      if (sawClosingBal && /Dr\.?\s*Count\s*:/i.test(joined) && /Cr\.?\s*Count\s*:/i.test(joined)) {
+        const drM = joined.match(/Dr\.?\s*Count\s*:\s*\|?\s*(\d+)/i);
+        const crM = joined.match(/Cr\.?\s*Count\s*:\s*\|?\s*(\d+)/i);
+        const nums = (rows[i] || []).map((c) => String(c || "").trim()).filter((v) => /^\s*-?[\d,]+\.\d{2}\s*$/.test(v));
+        if (drM && crM && nums.length >= 2) {
+          meta.summaries = [{
+            bf: meta.openingBalance !== undefined ? meta.openingBalance : null,
+            drCount: parseInt(drM[1], 10) || 0,
+            crCount: parseInt(crM[1], 10) || 0,
+            totalDebits: Math.abs(parseAmountNumber(nums[nums.length - 2])),
+            totalCredits: Math.abs(parseAmountNumber(nums[nums.length - 1])),
+            closingBal: lastClosingBal
+          }];
+          sawClosingBal = false;
         }
       }
     }
@@ -5390,11 +5433,33 @@
   function parseBankNarration(rawDetails, isCredit) {
     const clean = unwrapBankText(rawDetails)
       .replace(/(?:^|\s)-\s+-(?:\s|$)/g, " ")
+      .replace(/\s*\/?\s*BRANCH\s*:\s*(?:ATM\s+)?SERVICE\s+BRANCH(?:\s*\([^)]*\))?.*$/i, "")
       .replace(/\s+/g, " ")
       .trim();
     let payee = clean || "Bank Entry";
     let method = "Bank Transfer";
     let refNo = "";
+
+    // 0. Indian Bank IFSC-prefixed UPI / clearing formats: "UTIB0000837/NEHA KUMARI /XXXXX37928/.../UPI/509127669817/..."
+    const ifscUpiM = clean.match(/^([A-Z]{4}0[A-Z0-9]{6})\/([^\/]+)(?:\/|$)/i);
+    if (ifscUpiM) {
+      method = /\/UPI\//i.test(clean) ? "UPI" : "Bank Transfer";
+      const refM = clean.match(/\/UPI\/(\d{8,})/i) || clean.match(/\/(\d{10,})/);
+      if (refM) refNo = refM[1];
+      const rawParty = ifscUpiM[2].trim();
+      payee = cleanBankPayeeDisplay(rawParty, clean) || rawParty;
+      return { payee, method, refNo, raw: clean };
+    }
+
+    // 0b. INW_CLG cheque clearing: "INW_CLG :ClgInwPr: PREMSONS MOTOR ,ChqNo:186292,"
+    const inwM = clean.match(/^INW_CLG\s*:(?:[^:]+:)?\s*([^,]+)/i);
+    if (inwM) {
+      method = "Cheque";
+      const chqNoM = clean.match(/ChqNo\s*:\s*(\d+)/i);
+      if (chqNoM) refNo = chqNoM[1];
+      payee = cleanBankPayeeDisplay(inwM[1].replace(/,?\s*\/BRANCH.*$/i, "").trim(), clean) || inwM[1].trim();
+      return { payee, method, refNo, raw: clean };
+    }
 
     // 1. UPI/DR/123456/Name/BANK/vpa/remark...
     const upiM = clean.match(/UPI\/(DR|CR|REV|DRC|REVERSAL|REF)\/(\d+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?/i);
@@ -6337,8 +6402,8 @@
     if (raw === null || raw === undefined) return 0;
     const s = String(raw).trim();
     if (!s) return 0;
-    const isDrBal = /\bDR\.?\s*\)?\s*$/i.test(s) && !/\bCR\.?\s*\)?\s*$/i.test(s);
-    const isCrBal = /\bCR\.?\s*\)?\s*$/i.test(s);
+    const isCrBal = /(?:\b|\d)\s*\(?CR\.?\s*\)?\s*$/i.test(s);
+    const isDrBal = !isCrBal && /(?:\b|\d)\s*\(?DR\.?\s*\)?\s*$/i.test(s);
     const isParenNeg = /^\(.*\)$/.test(s) && !isCrBal;
     const cleaned = s.replace(/\s*\(?(CR|DR)\.?\s*\)?\s*$/i, "").replace(/,/g, "").replace(/[^0-9.-]/g, "");
     const num = parseFloat(cleaned);
@@ -6868,7 +6933,8 @@
     const isDashPlaceholder = (s) => /^[-–—]+(?:\s+[-–—]+)*$/.test(s) || /^(na|n\/a|nil)$/i.test(s);
     const stripInlineDashes = (s) => String(s || "").replace(/(?:^|\s)-\s+-(?=\s|$)/g, " ").replace(/\s+/g, " ").trim();
     const standaloneHdrRe = /^(value\s+date|post\s+date|txn\s+date|details|particulars|particular|narration|ref(\s*no)?\/?|cheque(\s*no)?|chq(\s*no)?|no\.?|debit(\s*\(₹\))?|credit(\s*\(₹\))?|balance(\s*\(₹\))?|amount(\s*\(₹\))?|dr|cr|₹|rs\.?|-+|\s)+$/i;
-    const newTxPrefixRe = /^(WDL\s+TFR|DEP\s+TFR|POS\s+ATM(?:\s+PURCH)?|ATM\s+(?:WDL|CASH)|CASH\s+(?:DEP|WDL)|CREDIT\s+(?:Chq|TFR|TRANSFER)|DEBIT\s+(?:Chq|TFR|TRANSFER)|CEMTEX\s+DEP|BY\s+TRANSFER|TO\s+TRANSFER|BULK\s+POSTING|CLG\s+CHQ|INTEREST\s+CREDIT|UPI\/(?:DR|CR|REV|DRC|REVERSAL|REF)\/|IMPS\/|NEFT[\*\/\-]|RTGS[\*\/\-]|ACH(?:DR|CR)?[\s\/\-]|NACH[\s\/\-])\b/i;
+    const newTxPrefixRe = /^(?:[A-Z]{4}0[A-Z0-9]{6}\/|WDL\s+TFR|DEP\s+TFR|POS\s+ATM(?:\s+PURCH)?|ATM\s+(?:WDL|CASH)|CASH\s+(?:DEP|WDL)|CREDIT\s+(?:Chq|TFR|TRANSFER)|DEBIT\s+(?:Chq|TFR|TRANSFER)|CEMTEX\s+DEP|BY\s+TRANSFER|TO\s+TRANSFER|TRANSFER\s+(?:FROM|TO)|BULK\s+POSTING|CLG\s+CHQ|INW_CLG\b|INTEREST\s+CREDIT|UPI\/(?:DR|CR|REV|DRC|REVERSAL|REF)\/|IMPS\/|NEFT[\*\/\-]|RTGS[\*\/\-]|ACH(?:DR|CR)?[\s\/\-]|NACH[\s\/\-]|Mobile\/|Mr\.\s|Mrs\.\s|Ms\.\s)/i;
+    const branchCompleteRe = /\bSERVICE\s+BRANCH\b|\bCORE\s+BANKING\s+DATA\b|\bCENTRE$/i;
 
     const extractRowAmount = (r) => {
       let type = "expense", absAmt = 0;
@@ -6897,11 +6963,14 @@
       const parts = [];
       for (let c = 0; c < r.length; c++) {
         if (c === dIdx || c === debIdx || c === credIdx || c === amtIdx || c === balIdx || c === drCrIdx || c === refIdx) continue;
-        const t = unwrapBankText(r[c] || "");
+        let t = unwrapBankText(r[c] || "");
         if (!t || isDashPlaceholder(t)) continue;
         if (/^-?[\d,]+\.\d{1,2}(\s*(CR|DR)\.?)?$/i.test(t)) continue;
         if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(t)) continue;
-        parts.push(t);
+        // Strip leading duplicate date when Value Date & Details merged on one cell (e.g. "31/03/26 PROCESSING FEE")
+        const leadDateM = t.match(/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\s+(.+)$/);
+        if (leadDateM) t = leadDateM[1].trim();
+        if (t && !isDashPlaceholder(t)) parts.push(t);
       }
       return parts.join(" ").trim();
     };
@@ -6961,7 +7030,9 @@
       }
 
       const joined = unwrapBankText(r.join(" "));
-      if (/\b(statement\s+summary|brought\s+forward\s*\(|dr\s+count\b.*\bcr\s+count|total\s+debits\b.*\btotal\s+credits)\b/i.test(joined)) {
+      if (/\b(statement\s+summary|brought\s+forward\s*\(|dr\.?\s*count\b.*\bcr\.?\s*count|total\s+debits\b.*\btotal\s+credits)\b/i.test(joined)
+        || /^carried\s+forward\b/i.test(joined)
+        || /^closing\s+balance\s*:/i.test(joined)) {
         pendingRow = null;
         pendingAmountRow = null;
         upcomingPreLines = [];
@@ -6969,8 +7040,8 @@
         continue;
       }
       if (inSummaryBlock) continue;
-      if (/(please do not share your atm|debit\/credit card number|personal identification number|power of attorney holder|computer generated statement|does not require a signature|abbreviations are as under|end of statement)/i.test(joined)
-        || /^(page(\s*no\.?)?\b|account statement|opening balance|closing balance|total\b|grand total|carried forward|brought forward|statement summary|ifsc\s*:|micr\s*:|branch\s*:)/i.test(joined)) {
+      if (/(please do not share|debit\/credit card number|personal identification number|power of attorney holder|letter of authority|computer generated statement|does not require a signature|abbreviations are as under|end of statement|\*\*\*\s*end\s+of|about:blank)/i.test(joined)
+        || /^(page(\s*no\.?)?\b|account statement|statement\s+of\s+account|opening balance|closing balance|total\b|grand total|carried forward|brought forward|statement summary|ifsc\s*(?:code)?\s*:|micr\s*:|branch\s*(?:code)?\s*:|account\s*no\s*:|cleared\s*balance|uncleared\s*amount|drawing\s*power|ckyc\s*id|nominee\s*name|nominee\s*type)/i.test(joined)) {
         pendingRow = null;
         pendingAmountRow = null;
         upcomingPreLines = [];
@@ -6991,14 +7062,26 @@
         if (absAmt < 0.01 && !newTxPrefixRe.test(joined) && standaloneHdrRe.test(joined)) {
           continue;
         }
-        const extra = stripInlineDashes(rawNarrCell || extractExtraText(r));
+        const extra = stripInlineDashes([rawNarrCell, extractExtraText(r)].filter(Boolean).join(" "));
+        const dedupExtra = (rawNarrCell && extractExtraText(r) && extractExtraText(r) !== rawNarrCell)
+          ? stripInlineDashes(`${rawNarrCell} ${extractExtraText(r)}`)
+          : stripInlineDashes(rawNarrCell || extractExtraText(r));
+        const lineExtra = dedupExtra || extra;
+
         if (pendingRow) {
-          if (extra) pendingRow.rawNarration = `${pendingRow.rawNarration} ${extra}`.trim();
-          if (colRef && !pendingRow.colRef) pendingRow.colRef = colRef;
-          if (pendingRow.rowBal === null && rowBal !== null) pendingRow.rowBal = rowBal;
-          if (absAmt >= 0.01) {
-            pushEntry(pendingRow.isoDate, pendingRow.rawNarration, type, absAmt, pendingRow.colRef, pendingRow.rowBal);
+          const cleanLead = lineExtra.replace(/^[\s\-–—•|]+/, "").trim();
+          if (cleanLead && newTxPrefixRe.test(cleanLead)) {
+            // Previous pendingRow was a zero-amount bank memo (e.g. Acknowledgement); next transaction started
             pendingRow = null;
+            upcomingPreLines.push(cleanLead);
+          } else {
+            if (lineExtra) pendingRow.rawNarration = `${pendingRow.rawNarration} ${lineExtra}`.trim();
+            if (colRef && !pendingRow.colRef) pendingRow.colRef = colRef;
+            if (pendingRow.rowBal === null && rowBal !== null) pendingRow.rowBal = rowBal;
+            if (absAmt >= 0.01) {
+              pushEntry(pendingRow.isoDate, pendingRow.rawNarration, type, absAmt, pendingRow.colRef, pendingRow.rowBal);
+              pendingRow = null;
+            }
           }
         } else if (absAmt >= 0.01) {
           // PDF Y-skew placed amount/balance slightly above its Date cell
@@ -7009,19 +7092,19 @@
             absAmt,
             rowBal,
             colRef,
-            extra: [pre, extra].filter(Boolean).join(" ").trim()
+            extra: [pre, lineExtra].filter(Boolean).join(" ").trim()
           };
-        } else if (absAmt < 0.01 && extra) {
-          const cleanLead = extra.replace(/^[\s\-–—•|]+/, "").trim();
-          if (upcomingPreLines.length > 0 || entries.length === 0 || newTxPrefixRe.test(cleanLead)) {
+        } else if (absAmt < 0.01 && lineExtra) {
+          const cleanLead = lineExtra.replace(/^[\s\-–—•|]+/, "").trim();
+          const prev = entries.length ? entries[entries.length - 1] : null;
+          if (upcomingPreLines.length > 0 || !prev || prev._narrationClosed || newTxPrefixRe.test(cleanLead)) {
             upcomingPreLines.push(cleanLead);
           } else if (pendingAmountRow) {
-            pendingAmountRow.extra = `${pendingAmountRow.extra} ${extra}`.trim();
+            pendingAmountRow.extra = `${pendingAmountRow.extra} ${lineExtra}`.trim();
             if (pendingAmountRow.rowBal === null && rowBal !== null) pendingAmountRow.rowBal = rowBal;
           } else {
             // Multi-line wrapped PDF narration continuation row
-            const prev = entries[entries.length - 1];
-            const mergedRaw = stripInlineDashes(`${prev.rawNarration} ${extra}`);
+            const mergedRaw = stripInlineDashes(`${prev.rawNarration} ${lineExtra}`);
             const reParsed = parseBankNarration(mergedRaw, prev.type === "income");
             prev.rawNarration = mergedRaw;
             prev.payee = reParsed.payee;
@@ -7029,6 +7112,7 @@
             prev.notes = reParsed.raw || prev.notes;
             if (!prev.refId && (reParsed.refNo || colRef)) prev.refId = reParsed.refNo || colRef;
             if (prev.bankBalance === undefined && rowBal !== null) prev.bankBalance = rowBal;
+            if (branchCompleteRe.test(cleanLead)) prev._narrationClosed = true;
             autoClassifyBankTx(prev, mergedRaw, histIdx);
           }
         }
@@ -7038,7 +7122,10 @@
       pendingRow = null;
       const preText = upcomingPreLines.length ? upcomingPreLines.join(" ") : "";
       upcomingPreLines = [];
-      const rowText = rawNarrCell || extractExtraText(r);
+      const extraSide = extractExtraText(r);
+      const rowText = (rawNarrCell && extraSide && extraSide !== rawNarrCell)
+        ? `${rawNarrCell} ${extraSide}`
+        : (rawNarrCell || extraSide);
       const combinedNarr = stripInlineDashes([preText, rowText].filter(Boolean).join(" "));
 
       if (absAmt < 0.01) {
@@ -7101,6 +7188,7 @@
     const perDateCounter = new Map();
     const aiOv = csvParsedState.aiOverrides;
     entries.forEach((e, idx) => {
+      delete e._narrationClosed;
       e.seq = idx + 1;
       if (aiOv instanceof Map && aiOv.has(e.seq)) {
         const p = aiOv.get(e.seq);

@@ -2865,7 +2865,7 @@ public final class StatementParser {
         }
         String joined = sb.toString().replaceAll("\\s+", " ").trim().toLowerCase(Locale.US);
         if (joined.isEmpty()) return false;
-        return Pattern.compile("(\\bstatement\\s+summary\\b|\\bbrought\\s+forward\\b|\\bopening\\s+balance\\b|\\bclosing\\s+balance\\b|please do not share your atm|power of attorney holder|computer generated statement|does not require a signature|abbreviations are as under|end of statement|^page\\s*(no\\.?)?\\s*\\d+(\\s*of\\s*\\d+)?$)")
+        return Pattern.compile("(\\bstatement\\s+summary\\b|\\bbrought\\s+forward\\b|\\bcarried\\s+forward\\b|\\bopening\\s+balance\\b|\\bclosing\\s+balance\\b|\\bdr\\.?\\s*count\\b|\\bcr\\.?\\s*count\\b|please do not share|power of attorney holder|letter of authority|computer generated statement|does not require a signature|abbreviations are as under|end of statement|\\*\\*\\*\\s*end\\s+of|about:blank|^page\\s*(no\\.?)?\\s*\\d+(\\s*of\\s*\\d+)?$)")
                 .matcher(joined).find();
     }
 
@@ -3041,14 +3041,23 @@ public final class StatementParser {
                 }
 
                 if (isPdfSummaryOrFooterLine(spans)) {
-                    inSummarySection = true;
                     List<String> rawRow = new ArrayList<String>(spans.size());
                     boolean hasBf = false;
+                    boolean hasBfHeaderCols = false;
                     for (PdfCellSpan s : spans) {
                         rawRow.add(s.text);
-                        if (s.text != null && s.text.toLowerCase(Locale.US).contains("brought forward")) hasBf = true;
+                        if (s.text != null) {
+                            String sl = s.text.toLowerCase(Locale.US);
+                            if (sl.contains("brought forward")) hasBf = true;
+                            if (sl.contains("dr count") || sl.contains("total debits")) hasBfHeaderCols = true;
+                        }
                     }
-                    nextRowIsSummaryValues = hasBf;
+                    if (hasBf && !hasBfHeaderCols) {
+                        nextRowIsSummaryValues = false;
+                    } else {
+                        inSummarySection = true;
+                        nextRowIsSummaryValues = hasBf;
+                    }
                     if (rowHasContent(rawRow)) rows.add(rawRow);
                     continue;
                 }
@@ -3157,7 +3166,7 @@ public final class StatementParser {
         for (int r = startRow; r < limit; r++) {
             List<PdfCellSpan> spans = pageSpans.get(r).spans;
             if (isPdfHeaderCellRow(spans) || isPdfSummaryOrFooterLine(spans)) break;
-            if (spans.size() < cal.size() - 2) continue;
+            if (spans.size() < Math.max(3, cal.size() - 4)) continue;
             for (PdfCellSpan sp : spans) {
                 boolean isNum = isPdfAmountText(sp.text);
                 int best = matchPdfHeaderColumn(sp, cal);

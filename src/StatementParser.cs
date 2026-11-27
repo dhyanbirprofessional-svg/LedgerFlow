@@ -2605,7 +2605,7 @@ namespace LedgerFlowHost {
             }
             string joined = Regex.Replace(sb.ToString(), @"\s+", " ").Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(joined)) return false;
-            return Regex.IsMatch(joined, @"(\bstatement\s+summary\b|\bbrought\s+forward\b|\bopening\s+balance\b|\bclosing\s+balance\b|please do not share your atm|power of attorney holder|computer generated statement|does not require a signature|abbreviations are as under|end of statement|^page\s*(no\.?)?\s*\d+(\s*of\s*\d+)?$)");
+            return Regex.IsMatch(joined, @"(\bstatement\s+summary\b|\bbrought\s+forward\b|\bcarried\s+forward\b|\bopening\s+balance\b|\bclosing\s+balance\b|\bdr\.?\s*count\b|\bcr\.?\s*count\b|please do not share|power of attorney holder|letter of authority|computer generated statement|does not require a signature|abbreviations are as under|end of statement|\*\*\*\s*end\s+of|about:blank|^page\s*(no\.?)?\s*\d+(\s*of\s*\d+)?$)");
         }
 
         private static bool IsPdfHeaderFragmentLine(List<PdfCellSpan> spans) {
@@ -2763,14 +2763,23 @@ namespace LedgerFlowHost {
                     }
 
                     if (IsPdfSummaryOrFooterLine(spans)) {
-                        inSummarySection = true;
                         var rawRow = new List<string>(spans.Count);
                         bool hasBf = false;
+                        bool hasBfHeaderCols = false;
                         foreach (var s in spans) {
                             rawRow.Add(s.Text);
-                            if (s.Text != null && s.Text.IndexOf("Brought Forward", StringComparison.OrdinalIgnoreCase) >= 0) hasBf = true;
+                            if (s.Text != null) {
+                                if (s.Text.IndexOf("Brought Forward", StringComparison.OrdinalIgnoreCase) >= 0) hasBf = true;
+                                if (s.Text.IndexOf("Dr Count", StringComparison.OrdinalIgnoreCase) >= 0 || s.Text.IndexOf("Total Debits", StringComparison.OrdinalIgnoreCase) >= 0) hasBfHeaderCols = true;
+                            }
                         }
-                        nextRowIsSummaryValues = hasBf;
+                        if (hasBf && !hasBfHeaderCols) {
+                            // Single-line "Brought Forward | 241845.44Dr" at top of page table: do NOT disable column alignment for rows below!
+                            nextRowIsSummaryValues = false;
+                        } else {
+                            inSummarySection = true;
+                            nextRowIsSummaryValues = hasBf;
+                        }
                         if (RowHasContent(rawRow)) rows.Add(rawRow);
                         continue;
                     }
@@ -2874,7 +2883,7 @@ namespace LedgerFlowHost {
             for (int r = startRow; r < limit; r++) {
                 var spans = pageSpans[r].Spans;
                 if (IsPdfHeaderCellRow(spans) || IsPdfSummaryOrFooterLine(spans)) break;
-                if (spans.Count < cal.Count - 2) continue;
+                if (spans.Count < Math.Max(3, cal.Count - 4)) continue;
                 foreach (var sp in spans) {
                     bool isNum = IsPdfAmountText(sp.Text);
                     int best = MatchPdfHeaderColumn(sp, cal);
